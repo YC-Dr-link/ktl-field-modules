@@ -1,0 +1,64 @@
+# 분류 · 촬영 항목 · 출력 칼럼 — B-1(서버) · B-2(화면) · B-3/B-4(모듈) 공용
+# 형식: ktl-hub/docs/02-API명세.md §3.4
+# ⚠ 칸 매핑은 견본 기준 임시안. 과제 B 연구원님 답을 받으면 이 파일만 고친다 (코드 변경 최소화).
+# export의 "항목.칸" = 그 항목 사진에서 읽은 칸 값. photo_first = 그 기기 첫 사진 저장 파일명.
+version: 1
+
+categories:
+  - category: sampling
+    label: 시료채취
+    phone: true
+    options:
+      - { key: flowmeter_type, label: 기준 유량계, choices: [defender, alicat] }
+    items:
+      - { key: cert,   label: "필증 (정도검사 증명서)", reader: cert,      required: true }
+      - { key: plate,  label: "형식승인표",             reader: none,      required: true }
+      - { key: prec_1, label: "정밀오차 1",             reader: flowmeter, required: true }
+      - { key: prec_2, label: "정밀오차 2",             reader: flowmeter, required: true }
+      - { key: prec_3, label: "정밀오차 3",             reader: flowmeter, required: true }
+      - { key: flow_1, label: "유량변동 1",             reader: flowmeter, required: true }
+      - { key: flow_2, label: "유량변동 2",             reader: flowmeter, required: true }
+      - { key: flow_3, label: "유량변동 3",             reader: flowmeter, required: true }
+    export: [photo_first, cert.prev_receipt, cert.approval_no, cert.maker, cert.serial,
+             prec_1.flow, prec_2.flow, prec_3.flow, flow_1.flow, flow_2.flow, flow_3.flow]
+
+  - category: dust
+    label: 먼지
+    phone: true
+    options:
+      - { key: dust_model, label: 측정기 종류, choices: [bam1020, mezus610] }
+    items:
+      - { key: cert,      label: "필증 (정도검사 증명서)", reader: cert, required: true }
+      - { key: plate,     label: "형식승인표",             reader: none, required: true }
+      - { key: span_film, label: "스팬필름",               reader: dust, required: true }
+      - { key: span_1,    label: "스팬 1",                 reader: dust, required: true }
+      - { key: span_2,    label: "스팬 2",                 reader: dust, required: true }
+      - { key: mid_film,  label: "중간필름",               reader: dust, required: true }
+      - { key: linearity, label: "직선성",                 reader: dust, required: true }
+      - { key: meas_flow, label: "측정유량",               reader: dust, required: true }
+      - { key: rep_1,     label: "반복성 1",               reader: dust, required: true }
+      - { key: rep_2,     label: "반복성 2",               reader: dust, required: true }
+      - { key: rep_3,     label: "반복성 3",               reader: dust, required: true }
+      - { key: blank_1,   label: "공시험 1",               reader: dust, required: true }
+      - { key: blank_2,   label: "공시험 2",               reader: dust, required: true }
+      - { key: blank_3,   label: "공시험 3",               reader: dust, required: true }
+      - { key: env,       label: "온도 · 압력 · 습도",     reader: dust, required: false }
+    export: [photo_first, cert.prev_receipt, cert.approval_no, cert.maker, cert.serial,
+             span_film.value, span_1.value, span_2.value, mid_film.value, linearity.value, meas_flow.value,
+             rep_1.value, rep_2.value, rep_3.value, blank_1.value, blank_2.value, blank_3.value,
+             env.temp, env.pressure, env.humidity]
+
+  # 아래 두 분류는 사진 없이 관리 화면에서 파일로 처리 (phone: false)
+  - category: gas
+    label: 가스
+    phone: false
+    selector: gas_select
+    items: []
+    export: [merge_raw]
+
+  - category: radon
+    label: 라돈
+    phone: false
+    selector: radon_merge
+    items: []
+    export: [merge_raw]

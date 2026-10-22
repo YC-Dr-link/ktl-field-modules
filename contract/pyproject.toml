@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ktl-contract"
+version = "1.0.0"
+description = "B-3/B-4 모듈과 B-1 서버 사이의 계약"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+pandas = ["pandas>=2.1"]
+
+[tool.setuptools]
+packages = ["ktl_contract"]
