@@ -1,4 +1,4 @@
-"""B-3 Reader 공통 전처리: 사진 열기, 회전, 서류/화면 영역 찾아 자르기.(미구현 -> lcd 크롭)"""
+"""B-3 Reader 공통 전처리: 사진 열기, 서류 회전, 서류 영역 찾아 자르기. 기기 화면(LCD) 자르기·회전은 screen.py."""
 
 import cv2
 import numpy as np
