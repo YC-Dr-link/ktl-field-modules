@@ -1,0 +1,11 @@
+FTLAB RADON DATA FILE
+MODEL NAME:	FRD500
+SN:	SYNTHETIC-500
+MeasMode:	Measurement Rn222
+Date and Time(Start)	2026-01-02 12:00:00
+Date and Time(Last)	2026-01-02 13:00:00
+Unit:	Bq/m3
+Data No: 2
+No	Date&Time	Radon	Temp	Humi	BaroMeter
+1 	2026-01-02 12:00:00	046	27.0	31	1023
+2 	2026-01-02 13:00:00	163	26.0	39	1022
