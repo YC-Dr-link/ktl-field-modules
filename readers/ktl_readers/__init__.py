@@ -5,9 +5,11 @@
 from ktl_contract import Reader
 from ktl_contract.fakes import FakeReader
 
+from .flowmeter import FlowmeterReader
+
 REGISTRY: dict[str, type | object] = {
     # "cert": CertReader,          # 지호
-    # "flowmeter": FlowmeterReader,  # 정윤
+    "flowmeter": FlowmeterReader,
     # "dust": DustReader,
 }
 
