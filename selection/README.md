@@ -96,6 +96,31 @@ B-1에서 해당 로더가 위 패키지의 `get_selector()`를 호출하도록 
 해당 테스트는 이 예외에만 strict xfail을 적용하며, 다른 실패는 그대로 실패 처리한다.
 `detect()`와 `series()`는 별도의 정상·오류·원본 불변 테스트로 검증한다.
 
+## Zero Air Purge 직전 12행 평균 (#13)
+
+사용자 확인 규칙: 첫 `Zero Air Purge` 행 바로 위의 **연속된 측정행 12개**로 산술평균을 낸다.
+Purge 행은 제외하며 파일의 행 순서를 유지한다. 평균을 낼 열은 명시적으로 지정한다.
+
+```python
+from ktl_selectors.radon import parse_radon_file
+from ktl_selectors.radon_average import average_before_zero_air_purge
+
+parsed = parse_radon_file(filename="upload.csv", content=file_bytes)
+result = average_before_zero_air_purge(parsed, column="crm1_radon")
+```
+
+`column`은 `target_radon`, `calculate_radon`, `crm1_radon` 중 하나다.
+결과는 JSON 가능한 dict이며 `average`, `count`, `measurement_rows`(1부터 시작하는 측정행 순번),
+`source_lines`(원본 파일 행 번호), 구간 시각과 Purge 위치를 제공한다. 반올림은 하지 않는다.
+Purge 바로 위 12행에 빈 값이 있으면 다른 행으로 대체하거나 분모를 줄이지 않고 오류를 낸다.
+Purge 누락·12행 미달도 오류이며, 연속된 Purge 행은 첫 행을 경계로 사용한다.
+서로 떨어진 Purge 구간이 여러 개면 대상 구간을 추측하지 않고 오류로 알린다.
+장비 TXT에는 이 상태 열이 없으므로 이 함수는 챔버 파싱 결과만 받는다.
+원본과 파싱 객체는 수정하지 않으며, 파싱 경고는 원래 객체의 `warnings`에 유지한다.
+
+TODO(확인 필요): 시험품에 적용할 챔버 행과의 대응, 지시오차·반복성 식, RAW1~4 전체 배치.
+이 평균 함수는 `run()`의 RAW 결과 반환과 별개다. 전체 계약 테스트의 예상 실패는 아직 남는다.
+
 ## 테스트
 
 저장소 루트에서 실행한다. 기본 테스트는 `selection/synthetic/radon_parser/`의 작은 합성 파일을
