@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 import pytest
+from ktl_contract.fakes import FakeReader
 from ktl_contract.testing import check_reader, check_reader_rejects
 from ktl_readers import REGISTRY, get_reader
 
@@ -12,8 +13,8 @@ REQUIRED_DISTORTIONS = {"rotation", "blur", "reflection", "noise"}
 def test_fake_reader_follows_contract(tmp_path):
     img = tmp_path / "x.jpg"
     img.write_bytes(b"not really a jpeg")
-    for name in ("cert", "flowmeter", "dust"):
-        assert check_reader(get_reader(name), str(img), name) is not None
+    for name in ("cert", "flowmeter", "dust"):           # 진짜 Reader가 등록돼도 가짜 모듈 자체는 계속 확인
+        assert check_reader(FakeReader(name), str(img), name) is not None
 
 
 @pytest.mark.parametrize(
