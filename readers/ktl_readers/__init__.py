@@ -6,10 +6,15 @@ from ktl_contract import Reader
 from ktl_contract.fakes import FakeReader
 
 REGISTRY: dict[str, type | object] = {
-    # "cert": CertReader,          # 지호
     # "flowmeter": FlowmeterReader,  # 정윤
     # "dust": DustReader,
 }
+
+try:  # cert는 opencv가 필요하다. 선택 설치(readers[screen])를 안 했으면 등록하지 않고 가짜 모듈로 대신한다
+    from .cert import CertReader      # 지호
+    REGISTRY["cert"] = CertReader
+except ImportError:
+    pass
 
 
 def get_reader(name: str, fake_fallback: bool = True) -> Reader:
