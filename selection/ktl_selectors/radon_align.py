@@ -73,7 +73,12 @@ def resolve_reference(paths: list[str], options: dict | None) -> int:
 
 @dataclass
 class ClockDifference:
-    """기기 시각 − 기준기 시각(초). 짝지은 행들 기준."""
+    """기기 시각 − 기준기 시각(초). 짝지은 행들 기준.
+
+    TODO(확인 필요): 시계 차이 계산 기준은 명세에 없다. 지금은 짝지은 행들의 차이를
+    중앙값(대표값)·최소·최대·drift(마지막 − 첫 짝)로 보여 준다. 기준 시계를 무엇으로
+    볼지(기준기 · 챔버 · 표준시), 경고할 차이 크기는 과제 B 연구원님 답(01 §9)을 받아 맞춘다.
+    """
     offset_s: float          # 중앙값. 화면에 보여 줄 대표값
     min_offset_s: float
     max_offset_s: float

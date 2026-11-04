@@ -138,7 +138,8 @@ meta = get_selector("radon_merge", fake_fallback=False).align(paths, {"align": "
 - `reference`는 위치(0부터) · 경로 · 파일 이름을 받는다. 없으면 첫 파일.
 - `run()`이 구현되면 이 dict를 `SelectResult.meta["alignment"]`에 넣고 `rows`로 행을 고른다.
 
-TODO(확인 필요): KTL 라돈 정렬 기준(정시 내림인지, 기준기 최근접인지), `reference`가 서버 파일 ID로 오는지.
+TODO(확인 필요): KTL 라돈 정렬 기준(정시 내림인지, 기준기 최근접인지), 시계 차이 계산 기준·경고 크기,
+`reference`가 서버 파일 ID(`file_id`)로 오는지 — 지금은 서버가 경로로 바꿔 넘긴다고 보고 ID면 오류를 낸다.
 시각 차이가 30분 근처인 기기는 한 시간 앞·뒤로 짝이 바뀔 수 있다 (합성 HJ25 기준일 때 GA21_010~012).
 
 ## 테스트
