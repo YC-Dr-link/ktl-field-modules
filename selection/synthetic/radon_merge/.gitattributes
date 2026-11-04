@@ -1,0 +1,3 @@
+# Preserve the logger fixtures' exact bytes (BOM, CRLF and trailing tabs).
+*.csv -text
+*.txt -text

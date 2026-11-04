@@ -8,7 +8,15 @@ version = "0.1.0"
 description = "B-3 사진 판독 모듈 (cert · flowmeter · dust)"
 requires-python = ">=3.11"
 dependencies = ["ktl-contract"]
-# OCR 의존성은 버전을 서버와 맞춘 뒤 추가 (이슈로): rapidocr-onnxruntime, opencv-python-headless, pillow
+
+[project.optional-dependencies]
+# 화면(LCD)·서류 자르기(screen.py, preprocess.py)를 쓸 때만: pip install -e "readers[screen]"  (#25)
+screen = [
+    "opencv-python-headless==4.14.0.94",
+    "rapidocr>=3,<4",
+    "onnxruntime",
+    "numpy<3",
+]
 
 [tool.setuptools]
 packages = ["ktl_readers"]
