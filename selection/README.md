@@ -96,9 +96,38 @@ B-1에서 해당 로더가 위 패키지의 `get_selector()`를 호출하도록 
 해당 테스트는 이 예외에만 strict xfail을 적용하며, 다른 실패는 그대로 실패 처리한다.
 `detect()`와 `series()`는 별도의 정상·오류·원본 불변 테스트로 검증한다.
 
-## Zero Air Purge 직전 12행 평균 (#13)
+## 파일별 Temp 마지막 12행 평균 (#13, 사용자 설명 반영)
 
-사용자 확인 규칙: 첫 `Zero Air Purge` 행 바로 위의 **연속된 측정행 12개**로 산술평균을 낸다.
+현재 요청 흐름은 모든 업로드 파일을 먼저 파싱하고, 각 장비 파일에서 `Temp`의
+마지막 측정행 12개를 골라 **파일별로** 평균 내는 것이다. 여러 파일의 값을 합쳐 평균 내지 않는다.
+파일의 행 순서를 유지하며, 이 온도 평균에서는 Zero Air Purge 위치로 구간을 자르지 않는다.
+값이 비어 있거나 12행 미만이면 오류로 알리고 앞쪽 값으로 채우지 않는다.
+
+```python
+from ktl_selectors.radon import parse_radon_file
+from ktl_selectors.radon_temperature import average_temperatures
+
+parsed_files = [parse_radon_file(filename, content) for filename, content in uploads]
+# 챔버 열 선택은 호출자가 명시한다. 아래는 Inner Temperature를 선택한 사용 예시다.
+result = average_temperatures(parsed_files, chamber_column="Inner Temperature")
+```
+
+챔버 CSV에는 `Temp`가 없으므로 `chamber_column`을 명시해야 한다.
+`"Inner Temperature"` 등 원본 열 이름을 전달하면 해당 열을 사용하고,
+`None`을 명시하면 챔버를 제외하며 `excluded_files`에 남긴다. 기본 정책은 추측하지 않는다.
+장비 파일은 이 옵션과 관계없이 파싱된 `temp`를 사용한다.
+`averages`에는 파일별 S/N·평균·선택한 12개 값·측정행 순번·원본 행 번호·시간 구간을,
+`warnings`에는 파싱 경고를 반환한다. 파일명이나 S/N이 같아도 각 입력을 따로 유지한다.
+한 파일에는 `average_tail_temperature(parsed)`를 사용할 수 있다.
+파서가 제공하는 라돈 `unit`을 온도 단위로 사용하지 않는다.
+
+TODO(확인 필요): 업무에서 챔버에 적용할 온도 열 또는 제외 여부.
+지시오차·반복성 계산식과 RAW1~4 배치는 별도 확인이 필요하며, `run()`은 아직 미구현이다.
+
+## 이전에 구현한 챔버 라돈 평균 함수
+
+이 함수는 앞서 구현한 챔버 라돈 평균이며, 위의 Temp 평균 흐름과 별개다.
+첫 `Zero Air Purge` 행 바로 위의 **연속된 측정행 12개**로 산술평균을 낸다.
 Purge 행은 제외하며 파일의 행 순서를 유지한다. 평균을 낼 열은 명시적으로 지정한다.
 
 ```python
