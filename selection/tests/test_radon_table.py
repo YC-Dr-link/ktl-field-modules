@@ -1,6 +1,7 @@
 import copy
 import csv
 from datetime import timedelta
+from math import sqrt
 import io
 from pathlib import Path
 
@@ -21,15 +22,15 @@ def test_twelve_rows_and_average_with_one_time_value_pair_per_file():
     parsed = [parse_radon_file(path.name, data) for path, data in zip(paths, before)]
     original = copy.deepcopy(parsed)
     table = build_average_detail_table(parsed, align="sequence")
-    assert table.shape == (13, 5)
+    assert table.shape == (14, 5)
     first, second = table.attrs["sources"]
-    assert first["value_column"] == "[1] SYNTHETIC-TEMPERATURE"
+    assert first["value_column"] == "[1]"
     assert second["value_column"] == "[2] CRM-1 Radon"
-    assert table["구분"].tolist() == [f"측정값 {i}" for i in range(1, 13)] + ["평균"]
-    assert table[first["value_column"]].tolist() == list(range(20, 32)) + [25.5]
-    assert table[second["value_column"]].tolist() == list(range(1, 13)) + [6.5]
+    assert table["구분"].tolist() == [f"측정값 {i}" for i in range(1, 13)] + ["평균", "표준편차"]
+    assert table[first["value_column"]].tolist() == pytest.approx(list(range(20, 32)) + [25.5, sqrt(13)])
+    assert table[second["value_column"]].tolist() == pytest.approx(list(range(1, 13)) + [6.5, sqrt(13)])
     for source in (first, second):
-        assert table[source["time_column"]].tolist() == [f"2026-01-03 {hour:02d}:00:00" for hour in range(2, 14)] + [""]
+        assert table[source["time_column"]].tolist() == [f"2026-01-03 {hour:02d}:00:00" for hour in range(2, 14)] + ["", ""]
     assert parsed == original and [path.read_bytes() for path in paths] == before
 
 
@@ -52,7 +53,7 @@ def test_duplicate_model_and_file_name_keep_separate_blocks_and_warnings():
                               .replace(b"\t20\t", b"\t32\t").replace(b"Data No: 14", b"Data No: 15"))
     table = build_average_detail_table([first, second], align="sequence")
     one, two = table.attrs["sources"]
-    assert table.columns.is_unique and table.shape == (13, 5)
+    assert table.columns.is_unique and table.shape == (14, 5)
     assert table.iloc[12][one["value_column"]] == 25.5
     assert table.iloc[12][two["value_column"]] == 26.5
     assert two["serial_number"] == "SYNTHETIC-SECOND"
@@ -67,12 +68,14 @@ def test_csv_roundtrip_has_time_values_and_mean_below_each_file():
     assert content.startswith(b"\xef\xbb\xbf")
     rows = list(csv.DictReader(io.StringIO(content.decode("utf-8-sig"))))
     source = table.attrs["sources"][0]
-    assert len(rows) == 13
+    assert len(rows) == 14
     assert source["source_file"] == 'synthetic,"quoted".txt'
     assert rows[0][source["time_column"]] == "2026-01-03 02:00:00"
     assert float(rows[0][source["value_column"]]) == 20
-    assert rows[-1]["구분"] == "평균" and rows[-1][source["time_column"]] == ""
-    assert float(rows[-1][source["value_column"]]) == 25.5
+    assert rows[-2]["구분"] == "평균" and rows[-2][source["time_column"]] == ""
+    assert float(rows[-2][source["value_column"]]) == 25.5
+    assert rows[-1]["구분"] == "표준편차" and rows[-1][source["time_column"]] == ""
+    assert float(rows[-1][source["value_column"]]) == pytest.approx(sqrt(13))
 
 
 def test_empty_input_and_insufficient_measurements_are_errors():
@@ -89,12 +92,12 @@ def test_supplied_files_have_one_average_below_twelve_rows_each():
         pytest.skip("로컬 합성 예제는 커밋 대상에서 제외됨")
     parsed = [parse_radon_path(str(path)) for path in paths]
     table = build_average_detail_table(parsed, align="sequence")
-    assert table.shape == (13, 1 + 2 * len(paths))
+    assert table.shape == (14, 1 + 2 * len(paths))
     for info in table.attrs["sources"]:
         source = parsed[info["source_index"] - 1]
         assert info["source_file"] == source.source_file
         column = table[info["value_column"]]
-        assert column.iloc[-1] == pytest.approx(sum(column.iloc[:12]) / 12)
+        assert column.iloc[-2] == pytest.approx(sum(column.iloc[:12]) / 12)
 
 
 def test_identical_devices_keep_unique_headers_and_independent_timestamps():
@@ -118,14 +121,17 @@ def test_reference_group_precedes_other_files_and_headers_do_not_use_filenames()
         source.measurements[-1].temp += index
     original = copy.deepcopy(parsed)
     table = build_average_detail_table(parsed, reference_indices=[3, 1])
-    assert table.columns.tolist() == ["측정시간", "[1] SYNTHETIC-SN-3", "[2] SYNTHETIC-SN-1",
-                                     "[3] SYNTHETIC-SN-2", "[4] SYNTHETIC-SN-4"]
+    assert table.columns.tolist() == ["측정시간", "[1]", "[2]", "[3]", "[4]"]
+    assert table.attrs["csv_header_rows"] == [
+        ["파일명", "SYNTHETIC-FILE-3.txt", "SYNTHETIC-FILE-1.txt", "SYNTHETIC-FILE-2.txt", "SYNTHETIC-FILE-4.txt"],
+        ["S/N", "SYNTHETIC-SN-3", "SYNTHETIC-SN-1", "SYNTHETIC-SN-2", "SYNTHETIC-SN-4"],
+    ]
     assert [source["source_index"] for source in table.attrs["sources"]] == [3, 1, 2, 4]
     assert [source["is_reference"] for source in table.attrs["sources"]] == [True, True, False, False]
     for info, average in zip(table.attrs["sources"], table.attrs["averages"]):
         assert info["source_file"] == parsed[info["source_index"] - 1].source_file
-        assert table.iloc[-2][info["value_column"]] == 31 + info["source_index"]
-        assert table.iloc[-1][info["value_column"]] == average["average"]
+        assert table.iloc[-3][info["value_column"]] == 31 + info["source_index"]
+        assert table.iloc[-2][info["value_column"]] == average["average"]
     assert parsed == original
 
 
@@ -146,7 +152,12 @@ def test_ktl_hj_and_1023_crm1_are_first_without_using_filenames_as_serials(align
     assert [source["source_index"] for source in sources] == [4, 3, 2, 1]
     assert [source["is_reference"] for source in sources] == [True, True, True, False]
     assert [source["value_column"] for source in sources] == [
-        "[1] SYNTHETIC-KTL-SERIAL", "[2] SYNTHETIC-HJ-SERIAL", "[3] CRM-1 Radon", "[4] KTL-SYNTHETIC-DEVICE"]
+        "[1]", "[2]", "[3] CRM-1 Radon", "[4]"]
+    filename_row, serial_row = table.attrs["csv_header_rows"]
+    for source in sources:
+        column = table.columns.get_loc(source["value_column"])
+        assert filename_row[column] == source["source_file"]
+        assert serial_row[column] == (source["serial_number"] or "")
     assert sources[0]["source_file"] == "ktl-SYNTHETIC.txt"
     assert sources[0]["serial_number"] == "SYNTHETIC-KTL-SERIAL"
     assert sources[2]["source_file"] == "1023.csv" and sources[2]["serial_number"] is None

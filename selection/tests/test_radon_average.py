@@ -2,6 +2,7 @@ import copy
 import csv
 import io
 import json
+from math import sqrt
 from pathlib import Path
 
 import pytest
@@ -146,6 +147,10 @@ def test_batch_uses_chamber_crm1_and_device_temp():
     assert [r["selection"] for r in result["averages"]] == ["tail", "before_zero_air_purge"]
     assert [r["source_index"] for r in result["averages"]] == [1, 2]
     assert result["averages"][1]["values"] == list(range(1, 13))
+    # 1~12 및 20~31의 표본 분산은 13, 모집단 분산은 143/12.
+    for average in result["averages"]:
+        assert average["standard_deviations"]["sample"] == pytest.approx(sqrt(13))
+        assert average["standard_deviations"]["population"] == pytest.approx(sqrt(143 / 12))
     assert json.loads(json.dumps(result, allow_nan=False)) == result
     assert parsed == original
     assert [path.read_bytes() for path in paths] == content

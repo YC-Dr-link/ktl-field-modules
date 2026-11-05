@@ -68,12 +68,12 @@ class RadonSelector:
         return frame
 
     def run(self, paths: list[str], options: dict) -> SelectResult:
-        """장비별 열과 마지막 평균 행을 반환한다. CSV 저장은 서버에서 수행한다."""
+        """장비별 열과 평균·표준편차 행을 반환한다. CSV 저장은 서버에서 수행한다."""
         if not paths:
             raise ReadError("병합할 라돈 파일이 없습니다.")
         if not isinstance(options, dict):
             raise ReadError("병합 options는 dict여야 합니다.")
-        if set(options) - {"reference", "align"}:
+        if set(options) - {"reference", "align", "stddev_ddof"}:
             raise ReadError("지원하지 않는 병합 옵션이 있습니다.")
         align = options.get("align", "hour")
         if align not in ("hour", "sequence"):
@@ -89,16 +89,20 @@ class RadonSelector:
             reference_index = normalized.index(Path(reference).resolve()) + 1
         parsed = [parse_radon_path(path) for path in paths]
         table = build_average_detail_table(parsed, align=align,
-                                          reference_indices=[reference_index] if reference_index else None)
+                                          reference_indices=[reference_index] if reference_index else None,
+                                          stddev_ddof=options.get("stddev_ddof", 1))
         warnings = [warning for source in parsed for warning in source.warnings]
         description = ("같은 날짜의 측정시각을 한 시간 단위 정시로 묶습니다. 빈 시간대는 빈칸입니다."
                        if align == "hour" else "같은 행은 파일별 선택 순번이며 시각 정렬은 수행하지 않습니다.")
-        warnings.append(Warning("DETAIL_LAYOUT", f"{description} 장비별 기존 12개 값의 평균을 마지막 행에 표시합니다. RAW1~4 배치는 포함되지 않습니다."))
+        warnings.append(Warning("DETAIL_LAYOUT", f"{description} 장비별 기존 12개 값의 평균과 표준편차를 마지막 두 행에 표시합니다. RAW1~4 배치는 포함되지 않습니다."))
         # TODO(확인 필요): 장비 간 순번 대응, 지시오차·반복성 식, RAW1~4 배치.
         return SelectResult(table=table, warnings=warnings, meta={
             "layout": "radon_hour_v1" if align == "hour" else "radon_wide_v1", "requested_align": align,
             "row_order": "hour_ascending" if align == "hour" else "selected_row_position_per_file",
             "sources": table.attrs["sources"],
+            "csv_header_rows": table.attrs["csv_header_rows"],
+            "standard_deviation": {"ddof": table.attrs["stddev_ddof"], "count": 12,
+                                   "kind": "sample" if table.attrs["stddev_ddof"] else "population"},
             "alignment": {"mode": align, "rounding": "floor_to_hour" if align == "hour" else None,
                           "missing": "blank", "duplicate_hour": "error"},
             "reference_file_index": reference_index, "averages": table.attrs["averages"],

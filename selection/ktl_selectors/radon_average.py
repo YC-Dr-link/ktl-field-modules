@@ -1,6 +1,7 @@
 """#13: 파일별 지정 열과 구간의 12개 값 평균. 입력을 정렬·보정하지 않는다."""
 from dataclasses import asdict
 from math import fsum, isfinite
+from statistics import pstdev, stdev
 
 from ._radon_common import normalize
 from .radon_models import ParsedRadonFile, RadonParseError
@@ -51,7 +52,7 @@ def average_before_zero_air_purge(parsed: ParsedRadonFile, *, column: str) -> di
 
 
 def average_radon_files(parsed_files: list[ParsedRadonFile]) -> dict:
-    """사용자 확인 규칙: 챔버 CRM-1 Radon, 장비 Temp를 파일별로 평균 낸다."""
+    """챔버 CRM-1 Radon, 장비 Temp의 같은 12개 값으로 통계를 계산한다."""
     averages = []
     for index, parsed in enumerate(parsed_files, 1):
         if parsed.format == "chamber":
@@ -62,9 +63,12 @@ def average_radon_files(parsed_files: list[ParsedRadonFile]) -> dict:
             source_column, selection = "Temp", "tail"
         else:
             raise RadonParseError(parsed.source_file, "UNSUPPORTED_FORMAT", "지원하지 않는 라돈 파일 형식입니다.")
+        deviations = {"sample": stdev(result["values"]), "population": pstdev(result["values"])}
+        if not all(isfinite(value) for value in deviations.values()):
+            raise RadonParseError(parsed.source_file, "INVALID_STANDARD_DEVIATION", "표준편차를 유한한 숫자로 계산할 수 없습니다.")
         averages.append({"source_index": index, "model_name": parsed.model_name,
                          "serial_number": parsed.serial_number, "source_column": source_column,
-                         "selection": selection, **result})
+                         "selection": selection, "standard_deviations": deviations, **result})
     return {"averages": averages,
             "warnings": [asdict(warning) for parsed in parsed_files for warning in parsed.warnings]}
 

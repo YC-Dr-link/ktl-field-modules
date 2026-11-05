@@ -91,8 +91,12 @@ B-1에서 해당 로더가 위 패키지의 `get_selector()`를 호출하도록 
 실제 HTTP 업로드 연동을 검증한 것은 아니다. 업로드 엔드포인트 구현은 포함하지 않는다.
 
 `run(paths, options)`는 장비별 열을 가로로 배치한 표를 `SelectResult.table`로 반환한다.
-각 파일에서 선택한 12개 값을 배치하고 마지막 행에 평균을 표시한다. 파일 저장은 서버가 수행한다.
+각 파일에서 선택한 12개 값을 배치하고 마지막 두 행에 평균과 표준편차를 표시한다. 파일 저장은 서버가 수행한다.
 `options.align`은 `hour`(기본값)와 `sequence`를 지원한다. 알 수 없는 옵션은 오류로 알린다.
+`options.stddev_ddof`는 표본 표준편차 `1`(기본값), 모집단 표준편차 `0`을 지원한다.
+표준편차는 각 파일의 평균에 사용한 동일한 12개 값으로 계산하며 평균 바로 아래 행에 표시한다.
+`meta.standard_deviation`에 계산 방식과 건수를 제공하고, 각 평균 근거의 `standard_deviations`에 두 방식의 값을 보존한다.
+TODO(확인 필요): 기본 표본 표준편차 방식이 최종 업무 기준과 일치하는지 확인한다. 지시오차·반복성의 최종 식은 별도다.
 `options.reference`는 입력 경로 중 하나이며, 서버가 받은 file ID를 경로로 변환해 전달한다.
 현재 기준기는 `meta.reference_file_index`에 기록하며 지시오차 계산에는 아직 사용하지 않는다.
 사용자가 지정한 파일명 규칙에 따라 KTL로 시작하는 파일, HJ로 시작하는 파일,
@@ -143,24 +147,34 @@ TODO(확인 필요): 장비 간 순번 대응, 지시오차·반복성 계산식
 ## 모델·측정시간별 상세표
 
 `build_average_detail_table(parsed_files)`는 한 시간 단위 공통 시각과 파일별 값 열을 제공하고,
-마지막 행에 모든 파일의 평균을 나란히 표시한다. 기본값은 `align="hour"`다.
+마지막 두 행에 모든 파일의 평균과 표준편차를 나란히 표시한다. 기본값은 `align="hour"`다.
 
 ```python
 from ktl_selectors.radon_table import build_average_detail_table
+import csv
+import io
 
 table = build_average_detail_table(parsed_files)
-csv_bytes = table.to_csv(index=False, lineterminator="\r\n").encode("utf-8-sig")
+stream = io.StringIO(newline="")
+writer = csv.writer(stream, lineterminator="\r\n")
+writer.writerows(table.attrs["csv_header_rows"])
+writer.writerow(table.columns)
+writer.writerows(table.values.tolist())
+csv_bytes = stream.getvalue().encode("utf-8-sig")
 ```
 
-첫 열은 공통 `측정시간`이며, 파일마다 `[출력순번] S/N` 열을 추가한다.
-파일명·모델명은 CSV 머리글에 표시하지 않는다. S/N이 없는 챔버는 `[출력순번] CRM-1 Radon`으로 표시한다.
+CSV의 상단은 `파일명` 행 → `S/N` 행 → 측정시간/장비 번호 머리글 순서다.
+데이터 표의 첫 열은 공통 `측정시간`이며 장비 열은 `[출력순번]`으로 표시한다.
+챔버 열은 `[출력순번] CRM-1 Radon`이고, S/N 행의 해당 칸은 빈칸으로 둔다.
+`table.attrs["csv_header_rows"]`와 `run().meta["csv_header_rows"]`가 두 상단 행을 제공한다.
+CSV를 만들 때 두 행을 먼저 기록한 뒤 칼럼 이름과 측정행을 기록한다. `to_csv()`만 호출하면 상단 두 행은 포함되지 않는다.
 장비는 `Temp`, 챔버는 `CRM-1 Radon`을 표시한다. 측정시간과 값은 같은 원본 행에서 가져온다.
 같은 날짜의 `23:00`, `23:04`, `23:21`은 모두 `23:00:00` 행으로 묶는다. 날짜는 유지한다.
 모든 파일의 선택 시간대 합집합을 오름차순으로 표시하며, 값이 없는 셀은 빈칸이다.
 같은 장비에 같은 시간대 값이 둘 이상이면 `DUPLICATE_HOUR` 오류로 알린다. 임의 집계하지 않는다.
-마지막 `측정시간=평균` 행은 각 파일의 기존 12개 값 평균이다. 빈칸을 0으로 계산하지 않는다.
+마지막 두 행은 `측정시간=평균`, `측정시간=표준편차`다. 각 파일의 기존 12개 값을 사용하며 빈칸을 0으로 계산하지 않는다.
 파일별 구간이 다르면 측정행 수는 12행보다 많아질 수 있다. 15개 입력은 16열이다.
-`align="sequence"`는 기존 순번 배치(13행, 파일별 시간/값 열)를 유지한다.
+`align="sequence"`는 순번 배치(측정값 12행과 통계 2행, 파일별 시간/값 열)를 사용한다.
 `table.attrs["sources"]`와 `run().meta["sources"]`에 각 열의 파일명·모델·S/N 연결 정보를 제공한다.
 각 source의 `selected_timestamps`에 선택한 원본 측정시각도 보존한다.
 `source_file`(출처 파일명)과 `serial_number`(내부 S/N)는 별도 필드다. S/N에 파일명을 대입하지 않는다.

@@ -18,7 +18,7 @@ def test_real_run_contract_metadata_csv_and_input_preservation():
     before = {path: hashlib.sha256(Path(path).read_bytes()).digest() for path in SAMPLES}
     selector = get_selector("radon_merge", fake_fallback=False)
     result = check_selector(selector, SAMPLES, {"reference": SAMPLES[1], "align": "sequence"})
-    assert isinstance(result, SelectResult) and result.table.shape == (13, 5)
+    assert isinstance(result, SelectResult) and result.table.shape == (14, 5)
     assert result.meta["layout"] == "radon_wide_v1"
     assert result.meta["reference_file_index"] == 2
     assert result.meta["row_order"] == "selected_row_position_per_file"
@@ -30,12 +30,16 @@ def test_real_run_contract_metadata_csv_and_input_preservation():
     json.dumps(result.meta, allow_nan=False)
     content = result.table.to_csv(index=False, lineterminator="\r\n").encode("utf-8-sig")
     rows = list(csv.DictReader(io.StringIO(content.decode("utf-8-sig"))))
-    assert len(rows) == 13
+    assert len(rows) == 14
     first, second = result.meta["sources"]
-    assert first["value_column"] == "[1] SYNTHETIC-TEMPERATURE"
+    assert first["value_column"] == "[1]"
     assert second["value_column"] == "[2] CRM-1 Radon"
     assert first["source_index"] == 2 and first["is_reference"] is True
     assert first["source_file"] == "temperature.txt" and first["serial_number"] == "SYNTHETIC-TEMPERATURE"
+    assert result.meta["csv_header_rows"] == [
+        ["파일명", "", "temperature.txt", "", "chamber.csv"],
+        ["S/N", "", "SYNTHETIC-TEMPERATURE", "", ""],
+    ]
     assert rows[12]["구분"] == "평균"
     assert float(rows[12][first["value_column"]]) == 25.5
     assert float(rows[12][second["value_column"]]) == 6.5
@@ -84,6 +88,6 @@ def test_fifteen_files_return_side_by_side_columns_when_examples_available():
     result = get_selector("radon_merge").run(paths, {})
     hours = {datetime.fromisoformat(t).replace(minute=0, second=0, microsecond=0)
              for source in result.meta["sources"] for t in source["selected_timestamps"]}
-    assert result.table.shape == (len(hours) + 1, 1 + len(paths))
+    assert result.table.shape == (len(hours) + 2, 1 + len(paths))
     assert len(result.meta["averages"]) == len(paths)
     assert (result.table["측정시간"] == "평균").sum() == 1

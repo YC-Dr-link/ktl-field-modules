@@ -8,8 +8,8 @@ from .radon_models import ParsedRadonFile, RadonParseError
 
 
 def build_average_detail_table(parsed_files: list[ParsedRadonFile], *, align: str = "hour",
-                              reference_indices: list[int] | None = None) -> pd.DataFrame:
-    """장비별 값 열과 마지막 평균 행을 만든다. 기본은 날짜별 정시 맞춤이다.
+                              reference_indices: list[int] | None = None, stddev_ddof: int = 1) -> pd.DataFrame:
+    """장비별 값 열과 평균·표준편차 행을 만든다. 기본은 날짜별 정시 맞춤이다.
 
     hour는 분·초를 버린 정시를 공유하고, sequence는 파일별 시각을 보존한다.
     같은 장비의 한 시간에 값이 여러 개면 덮어쓰거나 평균 내지 않고 오류로 알린다.
@@ -19,6 +19,8 @@ def build_average_detail_table(parsed_files: list[ParsedRadonFile], *, align: st
         raise ReadError("상세표를 만들 라돈 파일이 없습니다.")
     if align not in ("hour", "sequence"):
         raise ReadError("정렬 방식은 hour 또는 sequence여야 합니다.")
+    if type(stddev_ddof) is not int or stddev_ddof not in (0, 1):
+        raise ReadError("표준편차 stddev_ddof는 표본 1 또는 모집단 0이어야 합니다.")
     references = list(reference_indices or [])
     if (any(type(index) is not int or not 1 <= index <= len(parsed_files) for index in references)
             or len(set(references)) != len(references)):
@@ -42,12 +44,13 @@ def build_average_detail_table(parsed_files: list[ParsedRadonFile], *, align: st
     records = {}
     columns = ["측정시간"] if align == "hour" else ["구분"]
     mean_row = {columns[0]: "평균"}
+    deviation_row = {columns[0]: "표준편차"}
     sources = []
     for display_index, average in enumerate(averages, 1):
         parsed = parsed_files[average["source_index"] - 1]
         prefix = f"[{display_index}]"
         time_column = "측정시간" if align == "hour" else f"{prefix} 측정시간"
-        identity = parsed.serial_number or ("CRM-1 Radon" if parsed.format == "chamber" else "")
+        identity = "CRM-1 Radon" if parsed.format == "chamber" else ""
         value_column = f"{prefix} {identity}" if identity else prefix
         columns.extend([value_column] if align == "hour" else [time_column, value_column])
         seen_hours, original_times = set(), []
@@ -68,15 +71,24 @@ def build_average_detail_table(parsed_files: list[ParsedRadonFile], *, align: st
             record[value_column] = value
         if align == "sequence":
             mean_row[time_column] = ""
+            deviation_row[time_column] = ""
         mean_row[value_column] = average["average"]
+        deviation_row[value_column] = average["standard_deviations"]["sample" if stddev_ddof else "population"]
         sources.append({"source_index": average["source_index"], "source_file": parsed.source_file,
                         "display_index": display_index, "is_reference": average["source_index"] in references,
                         "model_name": parsed.model_name, "serial_number": parsed.serial_number,
                         "time_column": time_column, "value_column": value_column,
                         "selected_timestamps": original_times})
     # 빈 장비 셀은 None으로 유지해 서버 JSON에 NaN이 나가지 않게 한다.
-    rows = [records[key] for key in sorted(records)] + [mean_row]
+    rows = [records[key] for key in sorted(records)] + [mean_row, deviation_row]
     table = pd.DataFrame([{column: row.get(column) for column in columns} for row in rows],
                          columns=columns, dtype=object)
-    table.attrs.update(averages=averages, warnings=result["warnings"], sources=sources)
+    file_row = ["파일명"] + [""] * (len(columns) - 1)
+    serial_row = ["S/N"] + [""] * (len(columns) - 1)
+    for source in sources:
+        position = columns.index(source["value_column"])
+        file_row[position] = source["source_file"]
+        serial_row[position] = source["serial_number"] or ""
+    table.attrs.update(averages=averages, warnings=result["warnings"], sources=sources,
+                       csv_header_rows=[file_row, serial_row], stddev_ddof=stddev_ddof)
     return table
