@@ -17,10 +17,10 @@ def test_real_run_contract_metadata_csv_and_input_preservation():
     before = {path: hashlib.sha256(Path(path).read_bytes()).digest() for path in SAMPLES}
     selector = get_selector("radon_merge", fake_fallback=False)
     result = check_selector(selector, SAMPLES, {"reference": SAMPLES[1], "align": "sequence"})
-    assert isinstance(result, SelectResult) and len(result.table) == 26
-    assert result.meta["layout"] == "radon_detail_v1"
+    assert isinstance(result, SelectResult) and result.table.shape == (13, 5)
+    assert result.meta["layout"] == "radon_wide_v1"
     assert result.meta["reference_file_index"] == 2
-    assert result.meta["row_order"] == "input_file_then_original_measurement_order"
+    assert result.meta["row_order"] == "selected_row_position_per_file"
     assert [a["average"] for a in result.meta["averages"]] == [6.5, 25.5]
     assert [a["source_column"] for a in result.meta["averages"]] == ["CRM-1 Radon", "Temp"]
     assert all(isinstance(warning, Warning) for warning in result.warnings)
@@ -29,10 +29,12 @@ def test_real_run_contract_metadata_csv_and_input_preservation():
     json.dumps(result.meta, allow_nan=False)
     content = result.table.to_csv(index=False, lineterminator="\r\n").encode("utf-8-sig")
     rows = list(csv.DictReader(io.StringIO(content.decode("utf-8-sig"))))
-    assert len(rows) == 26
-    assert rows[0]["항목"] == "CRM-1 Radon" and rows[13]["항목"] == "Temp"
-    assert rows[12]["구분"] == rows[25]["구분"] == "평균"
-    assert float(rows[12]["값"]) == 6.5 and float(rows[25]["값"]) == 25.5
+    assert len(rows) == 13
+    first, second = result.meta["sources"]
+    assert first["value_column"].endswith("CRM-1 Radon") and second["value_column"].endswith("Temp")
+    assert rows[12]["구분"] == "평균"
+    assert float(rows[12][first["value_column"]]) == 6.5
+    assert float(rows[12][second["value_column"]]) == 25.5
     assert before == {path: hashlib.sha256(Path(path).read_bytes()).digest() for path in SAMPLES}
 
 
@@ -70,11 +72,11 @@ def test_default_options_and_parsing_warnings_survive(tmp_path):
     assert [warning.code for warning in result.warnings] == ["COUNT_MISMATCH", "DETAIL_LAYOUT"]
 
 
-def test_fifteen_files_return_195_rows_when_examples_available():
+def test_fifteen_files_return_side_by_side_columns_when_examples_available():
     paths = sorted(str(p) for p in (SYN / "radon_merge").glob("*") if p.suffix.lower() in {".csv", ".txt"})
     if not paths:
         pytest.skip("로컬 합성 예제는 커밋 대상에서 제외됨")
     result = get_selector("radon_merge").run(paths, {})
-    assert len(result.table) == len(paths) * 13
+    assert result.table.shape == (13, 1 + 2 * len(paths))
     assert len(result.meta["averages"]) == len(paths)
-    assert (result.table["구분"] == "평균").sum() == len(paths)
+    assert (result.table["구분"] == "평균").sum() == 1

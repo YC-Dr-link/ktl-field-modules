@@ -68,7 +68,7 @@ class RadonSelector:
         return frame
 
     def run(self, paths: list[str], options: dict) -> SelectResult:
-        """사용자가 지정한 8열 상세표를 반환한다. CSV 저장은 서버에서 수행한다."""
+        """장비별 열과 마지막 평균 행을 반환한다. CSV 저장은 서버에서 수행한다."""
         if not paths:
             raise ReadError("병합할 라돈 파일이 없습니다.")
         if not isinstance(options, dict):
@@ -89,11 +89,11 @@ class RadonSelector:
         parsed = [parse_radon_path(path) for path in paths]
         table = build_average_detail_table(parsed)
         warnings = [warning for source in parsed for warning in source.warnings]
-        warnings.append(Warning("DETAIL_LAYOUT", "현재 결과는 측정값 12행과 평균 1행의 상세표입니다. RAW1~4 배치는 포함되지 않습니다."))
+        warnings.append(Warning("DETAIL_LAYOUT", "장비별 열에 측정값 12행과 평균 1행을 표시합니다. 같은 행은 파일별 선택 순번이며 시각 정렬이나 RAW1~4 배치는 포함되지 않습니다."))
         # TODO(확인 필요): 장비 간 순번 대응, 지시오차·반복성 식, RAW1~4 배치.
         return SelectResult(table=table, warnings=warnings, meta={
-            "layout": "radon_detail_v1", "requested_align": "sequence",
-            "row_order": "input_file_then_original_measurement_order",
+            "layout": "radon_wide_v1", "requested_align": "sequence",
+            "row_order": "selected_row_position_per_file", "sources": table.attrs["sources"],
             "reference_file_index": reference_index, "averages": table.attrs["averages"],
             "pending": ["cross_device_alignment", "indication_error", "repeatability", "raw1_4_layout"],
         })

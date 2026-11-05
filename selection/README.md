@@ -90,14 +90,14 @@ B-1에서 해당 로더가 위 패키지의 `get_selector()`를 호출하도록 
 이 저장소의 테스트는 패키지 로더 → 실제 Selector → 파서를 검증하며,
 실제 HTTP 업로드 연동을 검증한 것은 아니다. 업로드 엔드포인트 구현은 포함하지 않는다.
 
-`run(paths, options)`는 사용자가 우선 확인하기로 한 8열 상세표를 `SelectResult.table`로 반환한다.
-각 파일은 측정값 12행과 평균 1행이며 파일 저장은 하지 않는다. 서버가 CSV로 변환해 내려준다.
+`run(paths, options)`는 장비별 열을 가로로 배치한 표를 `SelectResult.table`로 반환한다.
+전체 표는 측정값 12행과 마지막 평균 1행이다. 파일 저장은 서버가 CSV로 변환해 수행한다.
 `options.align`은 현재 `sequence`만 지원한다. `hour`나 알 수 없는 옵션은 오류로 알린다.
 `options.reference`는 입력 경로 중 하나이며, 서버가 받은 file ID를 경로로 변환해 전달한다.
 현재 기준기는 `meta.reference_file_index`에 기록하며 지시오차 계산에는 아직 사용하지 않는다.
 입력 파일·측정행 순서를 유지하고, 파일 간 시각 정렬·값 대응은 하지 않는다.
 
-`meta.layout=radon_detail_v1`과 `DETAIL_LAYOUT` 경고로 결과 형식을 명시한다.
+`meta.layout=radon_wide_v1`과 `DETAIL_LAYOUT` 경고로 결과 형식을 명시한다.
 RAW1~4 배치, 파일 간 대응, 지시오차·반복성은 `meta.pending`에 남긴다.
 `ktl_contract.testing.check_selector`는 실제 모듈의 성공 결과로 검증하며 xfail은 제거했다.
 이는 계약 도우미의 타입·호출 검증이며, RAW1~4 배치나 #13 전체 완료를 뜻하지 않는다.
@@ -136,8 +136,8 @@ TODO(확인 필요): 장비 간 순번 대응, 지시오차·반복성 계산식
 
 ## 모델·측정시간별 상세표
 
-`build_average_detail_table(parsed_files)`는 각 파일의 선택된 측정값 12행을 시간과 함께 표시하고,
-바로 다음 행에 평균을 붙인다. 여러 파일은 입력 순서대로 같은 구조를 반복한다.
+`build_average_detail_table(parsed_files)`는 파일마다 측정시간과 값 열을 가로로 추가하고,
+측정값 12행 아래 한 행에 모든 파일의 평균을 나란히 표시한다.
 
 ```python
 from ktl_selectors.radon_table import build_average_detail_table
@@ -146,10 +146,12 @@ table = build_average_detail_table(parsed_files)
 csv_bytes = table.to_csv(index=False, lineterminator="\r\n").encode("utf-8-sig")
 ```
 
-열은 `파일순번`, `파일명`, `모델명`, `S/N`, `구분`, `측정시간`, `항목`, `값` 순서다.
-장비는 `Temp`, 챔버는 `CRM-1 Radon`을 표시한다. 측정시간과 값은 같은 원본 행에서 가져오고
-시각 정렬이나 파일 간 시간 맞춤은 하지 않는다. 평균 행은 `구분=평균`, 측정시간은 빈칸이다.
-챔버처럼 모델명·S/N이 제공되지 않은 입력은 해당 칸을 비워 두며 추측하지 않는다.
+첫 열은 `구분`이며, 파일마다 `[순번] 측정시간`, `[순번] 모델명 · S/N · 항목` 열을 추가한다.
+모델명·S/N은 머리글에만 표시한다. 둘 다 없는 챔버는 파일명을 머리글로 사용한다.
+장비는 `Temp`, 챔버는 `CRM-1 Radon`을 표시한다. 측정시간과 값은 같은 원본 행에서 가져온다.
+같은 행에 놓인 값은 각 파일의 선택 순번이며 동일 시각을 뜻하지 않는다. 시간 맞춤은 하지 않는다.
+평균 행은 `구분=평균`, 각 측정시간은 빈칸이다. 15개 입력은 13행 × 31열이다.
+`table.attrs["sources"]`와 `run().meta["sources"]`에 각 열의 파일명·모델·S/N 연결 정보를 제공한다.
 평균 근거와 파싱 경고는 `table.attrs["averages"]`, `table.attrs["warnings"]`에 보존한다.
 CSV 변환은 메모리에서 가능하며 파일 저장과 HTTP 다운로드는 호출하는 서버가 담당한다.
 이 표는 현재 `run()`과 CSV 다운로드에 사용하는 사용자 확인용 상세표다.
