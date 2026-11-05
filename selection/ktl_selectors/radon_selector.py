@@ -79,16 +79,17 @@ class RadonSelector:
         if align not in ("hour", "sequence"):
             raise ReadError("정렬 방식은 hour 또는 sequence여야 합니다.")
         reference_index = None
+        normalized = [Path(path).resolve() for path in paths]
         reference = options.get("reference")
         if reference is not None:
             if not isinstance(reference, str):
                 raise ReadError("기준기 reference는 선택한 파일의 경로 문자열이어야 합니다.")
-            normalized = [Path(path).resolve() for path in paths]
             if Path(reference).resolve() not in normalized:
                 raise ReadError("기준기는 선택한 파일 경로 중 하나여야 합니다.")
             reference_index = normalized.index(Path(reference).resolve()) + 1
         parsed = [parse_radon_path(path) for path in paths]
-        table = build_average_detail_table(parsed, align=align)
+        table = build_average_detail_table(parsed, align=align,
+                                          reference_indices=[reference_index] if reference_index else None)
         warnings = [warning for source in parsed for warning in source.warnings]
         description = ("같은 날짜의 측정시각을 한 시간 단위 정시로 묶습니다. 빈 시간대는 빈칸입니다."
                        if align == "hour" else "같은 행은 파일별 선택 순번이며 시각 정렬은 수행하지 않습니다.")
@@ -101,6 +102,8 @@ class RadonSelector:
             "alignment": {"mode": align, "rounding": "floor_to_hour" if align == "hour" else None,
                           "missing": "blank", "duplicate_hour": "error"},
             "reference_file_index": reference_index, "averages": table.attrs["averages"],
+            "column_order": "ktl_hj_crm1_then_other_references_then_input_order",
+            "reference_file_indices": [source["source_index"] for source in table.attrs["sources"] if source["is_reference"]],
             "pending": (["cross_device_alignment"] if align == "sequence" else [])
                        + ["indication_error", "repeatability", "raw1_4_layout"],
         })

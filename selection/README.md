@@ -95,6 +95,10 @@ B-1에서 해당 로더가 위 패키지의 `get_selector()`를 호출하도록 
 `options.align`은 `hour`(기본값)와 `sequence`를 지원한다. 알 수 없는 옵션은 오류로 알린다.
 `options.reference`는 입력 경로 중 하나이며, 서버가 받은 file ID를 경로로 변환해 전달한다.
 현재 기준기는 `meta.reference_file_index`에 기록하며 지시오차 계산에는 아직 사용하지 않는다.
+사용자가 지정한 파일명 규칙에 따라 KTL로 시작하는 파일, HJ로 시작하는 파일,
+1023 파일의 챔버 CRM-1 Radon 순서로 기준장비를 앞에 배치한다(접두어 대소문자 무시).
+그 뒤에 `options.reference`로 추가 지정한 기준기와 나머지 파일을 입력 순서대로 배치한다.
+파일명은 기준 역할 판별에만 쓰며 S/N은 파일 내용에서만 읽는다.
 `hour`는 같은 날짜의 시각에서 분·초를 버려 같은 정시 행에 장비 값을 나란히 배치한다.
 `sequence`는 기존처럼 파일별 선택 순번을 유지하며 개별 측정시간 열을 제공한다.
 
@@ -148,8 +152,8 @@ table = build_average_detail_table(parsed_files)
 csv_bytes = table.to_csv(index=False, lineterminator="\r\n").encode("utf-8-sig")
 ```
 
-첫 열은 공통 `측정시간`이며, 파일마다 `[순번] 모델명 · S/N · 항목` 열을 추가한다.
-모델명·S/N은 머리글에만 표시한다. 둘 다 없는 챔버는 파일명을 머리글로 사용한다.
+첫 열은 공통 `측정시간`이며, 파일마다 `[출력순번] S/N` 열을 추가한다.
+파일명·모델명은 CSV 머리글에 표시하지 않는다. S/N이 없는 챔버는 `[출력순번] CRM-1 Radon`으로 표시한다.
 장비는 `Temp`, 챔버는 `CRM-1 Radon`을 표시한다. 측정시간과 값은 같은 원본 행에서 가져온다.
 같은 날짜의 `23:00`, `23:04`, `23:21`은 모두 `23:00:00` 행으로 묶는다. 날짜는 유지한다.
 모든 파일의 선택 시간대 합집합을 오름차순으로 표시하며, 값이 없는 셀은 빈칸이다.
@@ -159,6 +163,9 @@ csv_bytes = table.to_csv(index=False, lineterminator="\r\n").encode("utf-8-sig")
 `align="sequence"`는 기존 순번 배치(13행, 파일별 시간/값 열)를 유지한다.
 `table.attrs["sources"]`와 `run().meta["sources"]`에 각 열의 파일명·모델·S/N 연결 정보를 제공한다.
 각 source의 `selected_timestamps`에 선택한 원본 측정시각도 보존한다.
+`source_file`(출처 파일명)과 `serial_number`(내부 S/N)는 별도 필드다. S/N에 파일명을 대입하지 않는다.
+`source_index`는 원래 입력 순번, `display_index`는 출력 순번, `is_reference`는 기준장비 여부다.
+평균 근거는 실제 열 순서와 같으며 각 항목의 `source_index`로 원본 입력을 추적할 수 있다.
 평균 근거와 파싱 경고는 `table.attrs["averages"]`, `table.attrs["warnings"]`에 보존한다.
 CSV 변환은 메모리에서 가능하며 파일 저장과 HTTP 다운로드는 호출하는 서버가 담당한다.
 이 표는 현재 `run()`과 CSV 다운로드에 사용하는 사용자 확인용 상세표다.

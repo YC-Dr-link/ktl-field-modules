@@ -23,8 +23,8 @@ def test_twelve_rows_and_average_with_one_time_value_pair_per_file():
     table = build_average_detail_table(parsed, align="sequence")
     assert table.shape == (13, 5)
     first, second = table.attrs["sources"]
-    assert first["value_column"] == "[1] FRD500 · SYNTHETIC-TEMPERATURE · Temp"
-    assert second["value_column"] == "[2] chamber.csv · CRM-1 Radon"
+    assert first["value_column"] == "[1] SYNTHETIC-TEMPERATURE"
+    assert second["value_column"] == "[2] CRM-1 Radon"
     assert table["구분"].tolist() == [f"측정값 {i}" for i in range(1, 13)] + ["평균"]
     assert table[first["value_column"]].tolist() == list(range(20, 32)) + [25.5]
     assert table[second["value_column"]].tolist() == list(range(1, 13)) + [6.5]
@@ -90,7 +90,8 @@ def test_supplied_files_have_one_average_below_twelve_rows_each():
     parsed = [parse_radon_path(str(path)) for path in paths]
     table = build_average_detail_table(parsed, align="sequence")
     assert table.shape == (13, 1 + 2 * len(paths))
-    for source, info in zip(parsed, table.attrs["sources"]):
+    for info in table.attrs["sources"]:
+        source = parsed[info["source_index"] - 1]
         assert info["source_file"] == source.source_file
         column = table[info["value_column"]]
         assert column.iloc[-1] == pytest.approx(sum(column.iloc[:12]) / 12)
@@ -107,3 +108,46 @@ def test_identical_devices_keep_unique_headers_and_independent_timestamps():
     assert table.iloc[0][one["time_column"]] == "2026-01-03 02:00:00"
     assert table.iloc[0][two["time_column"]] == "2026-01-03 02:02:00"
     assert table.iloc[0][one["value_column"]] == table.iloc[0][two["value_column"]] == 20
+
+
+def test_reference_group_precedes_other_files_and_headers_do_not_use_filenames():
+    parsed = [parse_radon_path(str(DEVICE)) for _ in range(4)]
+    for index, source in enumerate(parsed, 1):
+        source.source_file = f"SYNTHETIC-FILE-{index}.txt"
+        source.serial_number = f"SYNTHETIC-SN-{index}"
+        source.measurements[-1].temp += index
+    original = copy.deepcopy(parsed)
+    table = build_average_detail_table(parsed, reference_indices=[3, 1])
+    assert table.columns.tolist() == ["측정시간", "[1] SYNTHETIC-SN-3", "[2] SYNTHETIC-SN-1",
+                                     "[3] SYNTHETIC-SN-2", "[4] SYNTHETIC-SN-4"]
+    assert [source["source_index"] for source in table.attrs["sources"]] == [3, 1, 2, 4]
+    assert [source["is_reference"] for source in table.attrs["sources"]] == [True, True, False, False]
+    for info, average in zip(table.attrs["sources"], table.attrs["averages"]):
+        assert info["source_file"] == parsed[info["source_index"] - 1].source_file
+        assert table.iloc[-2][info["value_column"]] == 31 + info["source_index"]
+        assert table.iloc[-1][info["value_column"]] == average["average"]
+    assert parsed == original
+
+
+@pytest.mark.parametrize("indices", [[0], [2], [1, 1], [True]])
+def test_invalid_reference_indices_are_rejected(indices):
+    with pytest.raises(ReadError, match="기준장비"):
+        build_average_detail_table([parse_radon_path(str(DEVICE))], reference_indices=indices)
+
+
+@pytest.mark.parametrize("align", ["hour", "sequence"])
+def test_ktl_hj_and_1023_crm1_are_first_without_using_filenames_as_serials(align):
+    chamber = parse_radon_file("1023.csv", CHAMBER.read_bytes())
+    hj = parse_radon_file("Hj-SYNTHETIC.txt", DEVICE.read_bytes().replace(b"SYNTHETIC-TEMPERATURE", b"SYNTHETIC-HJ-SERIAL"))
+    ktl = parse_radon_file("ktl-SYNTHETIC.txt", DEVICE.read_bytes().replace(b"SYNTHETIC-TEMPERATURE", b"SYNTHETIC-KTL-SERIAL"))
+    other = parse_radon_file("other.txt", DEVICE.read_bytes().replace(b"SYNTHETIC-TEMPERATURE", b"KTL-SYNTHETIC-DEVICE"))
+    table = build_average_detail_table([other, chamber, hj, ktl], align=align)
+    sources = table.attrs["sources"]
+    assert [source["source_index"] for source in sources] == [4, 3, 2, 1]
+    assert [source["is_reference"] for source in sources] == [True, True, True, False]
+    assert [source["value_column"] for source in sources] == [
+        "[1] SYNTHETIC-KTL-SERIAL", "[2] SYNTHETIC-HJ-SERIAL", "[3] CRM-1 Radon", "[4] KTL-SYNTHETIC-DEVICE"]
+    assert sources[0]["source_file"] == "ktl-SYNTHETIC.txt"
+    assert sources[0]["serial_number"] == "SYNTHETIC-KTL-SERIAL"
+    assert sources[2]["source_file"] == "1023.csv" and sources[2]["serial_number"] is None
+    assert [average["average"] for average in table.attrs["averages"]] == [25.5, 25.5, 6.5, 25.5]

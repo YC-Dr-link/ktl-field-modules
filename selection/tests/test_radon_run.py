@@ -22,8 +22,8 @@ def test_real_run_contract_metadata_csv_and_input_preservation():
     assert result.meta["layout"] == "radon_wide_v1"
     assert result.meta["reference_file_index"] == 2
     assert result.meta["row_order"] == "selected_row_position_per_file"
-    assert [a["average"] for a in result.meta["averages"]] == [6.5, 25.5]
-    assert [a["source_column"] for a in result.meta["averages"]] == ["CRM-1 Radon", "Temp"]
+    assert [a["average"] for a in result.meta["averages"]] == [25.5, 6.5]
+    assert [a["source_column"] for a in result.meta["averages"]] == ["Temp", "CRM-1 Radon"]
     assert all(isinstance(warning, Warning) for warning in result.warnings)
     assert [warning.code for warning in result.warnings] == ["DETAIL_LAYOUT"]
     assert {"raw1_4_layout", "repeatability", "indication_error"}.issubset(result.meta["pending"])
@@ -32,10 +32,13 @@ def test_real_run_contract_metadata_csv_and_input_preservation():
     rows = list(csv.DictReader(io.StringIO(content.decode("utf-8-sig"))))
     assert len(rows) == 13
     first, second = result.meta["sources"]
-    assert first["value_column"].endswith("CRM-1 Radon") and second["value_column"].endswith("Temp")
+    assert first["value_column"] == "[1] SYNTHETIC-TEMPERATURE"
+    assert second["value_column"] == "[2] CRM-1 Radon"
+    assert first["source_index"] == 2 and first["is_reference"] is True
+    assert first["source_file"] == "temperature.txt" and first["serial_number"] == "SYNTHETIC-TEMPERATURE"
     assert rows[12]["구분"] == "평균"
-    assert float(rows[12][first["value_column"]]) == 6.5
-    assert float(rows[12][second["value_column"]]) == 25.5
+    assert float(rows[12][first["value_column"]]) == 25.5
+    assert float(rows[12][second["value_column"]]) == 6.5
     assert before == {path: hashlib.sha256(Path(path).read_bytes()).digest() for path in SAMPLES}
 
 
