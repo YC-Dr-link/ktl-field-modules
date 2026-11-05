@@ -5,6 +5,7 @@ import pandas as pd
 
 from ktl_contract import ReadError, SelectResult
 from .radon import parse_radon_path
+from .radon_align import align_files, resolve_align, resolve_reference
 from .radon_models import ParsedRadonFile, RadonParseError
 
 
@@ -69,6 +70,22 @@ class RadonSelector:
         frame.attrs.update(sources=sources, warnings=warnings)
         return frame
 
+    def align(self, paths: list[str], options: dict) -> dict:
+        """#15: 정렬 결과와 기기별 시계 차이(hour일 때). 화면 3단계 '시각' 선택용.
+
+        options = {"reference": 경로|파일 이름|위치, "align": "sequence"|"hour"} (02 §2.5).
+        반환 dict는 run()이 구현되면 SelectResult.meta["alignment"]에 그대로 넣는다.
+        """
+        if not paths:
+            raise ReadError("정렬할 라돈 파일이 없습니다.")
+        files = [parse_radon_path(path) for path in paths]
+        alignment = align_files(files, reference=resolve_reference(paths, options),
+                                mode=resolve_align(options))
+        return {**alignment.to_meta(files),
+                "warnings": [asdict(warning) for warning in alignment.warnings]}
+
     def run(self, paths: list[str], options: dict) -> SelectResult:
+        # TODO(#15 → REQ-B4-05): 병합 시 self.align()/align_files() 결과의 rows로 행을 고르고
+        # meta["alignment"]에 to_meta()를 넣는다.
         # TODO(확인 필요): #13의 합성 정답과 RAW1~4 배치에 맞춰 병합을 구현한다.
         raise RadonMergePendingError("라돈 병합·RAW 출력은 아직 지원하지 않습니다. 후속 이슈 #13 구현이 필요합니다.")

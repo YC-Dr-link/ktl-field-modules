@@ -174,6 +174,27 @@ Purge 누락·12행 미달도 오류이며, 연속된 Purge 행은 첫 행을 �
 TODO(확인 필요): 시험품에 적용할 챔버 행과의 대응, 지시오차·반복성 식, RAW1~4 전체 배치.
 이 평균 함수는 `run()`의 RAW 결과 반환과 별개다. 전체 계약 테스트의 예상 실패는 아직 남는다.
 
+## 정렬 방식 · 기기 시계 차이 (#15)
+
+옵션은 02 §2.5 그대로 `{"reference": …, "align": "sequence" | "hour"}`다. 기본은 `sequence`.
+
+```python
+meta = get_selector("radon_merge", fake_fallback=False).align(paths, {"align": "hour", "reference": "1023.csv"})
+# meta["files"][i]["clock"]["offset_text"] → "+8분"  (기기 시각 − 기준기 시각)
+```
+
+- `sequence`: 순번 k ↔ 순번 k. 건수가 다르면 짧은 쪽에 맞추고 `ALIGN_COUNT_MISMATCH` 경고.
+- `hour`: 기준기 행마다 가장 가까운 시각의 행을 1:1로 짝짓는다. 허용 범위는 기준기 간격의 절반 **미만**
+  (1시간 간격 → 30분 미만). 정확히 절반은 모호하므로 짝짓지 않는다. 시각은 보정하지 않고 차이만 보여 준다.
+- `meta["files"][i]`: `rows`(기준기 행별 측정행 번호, 없으면 `None`), `missing_slots`, `unmatched_rows`,
+  `clock`(`offset_s` 중앙값 · `min/max_offset_s` · `drift_s` · `offset_text`). 짝이 빠지면 `ALIGN_*` 경고.
+- `reference`는 위치(0부터) · 경로 · 파일 이름을 받는다. 없으면 첫 파일.
+- `run()`이 구현되면 이 dict를 `SelectResult.meta["alignment"]`에 넣고 `rows`로 행을 고른다.
+
+TODO(확인 필요): KTL 라돈 정렬 기준(정시 내림인지, 기준기 최근접인지), 시계 차이 계산 기준·경고 크기,
+`reference`가 서버 파일 ID(`file_id`)로 오는지 — 지금은 서버가 경로로 바꿔 넘긴다고 보고 ID면 오류를 낸다.
+시각 차이가 30분 근처인 기기는 한 시간 앞·뒤로 짝이 바뀔 수 있다 (합성 HJ25 기준일 때 GA21_010~012).
+
 ## 테스트
 
 저장소 루트에서 실행한다. 기본 테스트는 `selection/synthetic/radon_parser/`의 작은 합성 파일을
