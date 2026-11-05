@@ -13,7 +13,7 @@ from ktl_contract.fakes import FakeSelector
 from ktl_selectors import detect_any, get_selector
 from ktl_selectors.radon import parse_radon_path
 from ktl_selectors.radon_models import RadonParseError
-from ktl_selectors.radon_selector import RadonMergePendingError, RadonSelector
+from ktl_selectors.radon_selector import RadonSelector
 
 SYN = Path(__file__).resolve().parents[1] / "synthetic" / "radon_parser"
 
@@ -132,10 +132,10 @@ def test_missing_values_and_warnings_preserved(selector, write_input):
     assert {warning["code"] for warning in frame.attrs["warnings"]} == {"MISSING_VALUE", "COUNT_MISMATCH"}
 
 
-def test_empty_series_and_pending_merge(selector):
+def test_empty_series_and_insufficient_merge_rows(selector):
     with pytest.raises(ReadError, match="파일"):
         selector.series([])
-    with pytest.raises(RadonMergePendingError, match="#13"):
+    with pytest.raises(ReadError, match="INSUFFICIENT_AVERAGE_ROWS"):
         selector.run([str(SYN / "chamber.csv")], {"align": "sequence"})
 
 

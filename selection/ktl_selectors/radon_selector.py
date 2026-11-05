@@ -1,15 +1,13 @@
 """서버용 경로 인터페이스. 판별/시계열은 #11, RAW 병합은 #13."""
 from dataclasses import asdict
+from pathlib import Path
 
 import pandas as pd
 
-from ktl_contract import ReadError, SelectResult
+from ktl_contract import ReadError, SelectResult, Warning
 from .radon import parse_radon_path
 from .radon_models import ParsedRadonFile, RadonParseError
-
-
-class RadonMergePendingError(ReadError):
-    """실제 병합이 구현되기 전 성공한 RAW 표를 반환하지 않도록 한다."""
+from .radon_table import build_average_detail_table
 
 
 def _timestamps(parsed: ParsedRadonFile) -> list:
@@ -70,5 +68,32 @@ class RadonSelector:
         return frame
 
     def run(self, paths: list[str], options: dict) -> SelectResult:
-        # TODO(확인 필요): #13의 합성 정답과 RAW1~4 배치에 맞춰 병합을 구현한다.
-        raise RadonMergePendingError("라돈 병합·RAW 출력은 아직 지원하지 않습니다. 후속 이슈 #13 구현이 필요합니다.")
+        """사용자가 지정한 8열 상세표를 반환한다. CSV 저장은 서버에서 수행한다."""
+        if not paths:
+            raise ReadError("병합할 라돈 파일이 없습니다.")
+        if not isinstance(options, dict):
+            raise ReadError("병합 options는 dict여야 합니다.")
+        if set(options) - {"reference", "align"}:
+            raise ReadError("지원하지 않는 병합 옵션이 있습니다.")
+        if options.get("align", "sequence") != "sequence":
+            raise ReadError("현재 순번 방식만 지원합니다. 시각 정렬은 별도 구현이 필요합니다.")
+        reference_index = None
+        reference = options.get("reference")
+        if reference is not None:
+            if not isinstance(reference, str):
+                raise ReadError("기준기 reference는 선택한 파일의 경로 문자열이어야 합니다.")
+            normalized = [Path(path).resolve() for path in paths]
+            if Path(reference).resolve() not in normalized:
+                raise ReadError("기준기는 선택한 파일 경로 중 하나여야 합니다.")
+            reference_index = normalized.index(Path(reference).resolve()) + 1
+        parsed = [parse_radon_path(path) for path in paths]
+        table = build_average_detail_table(parsed)
+        warnings = [warning for source in parsed for warning in source.warnings]
+        warnings.append(Warning("DETAIL_LAYOUT", "현재 결과는 측정값 12행과 평균 1행의 상세표입니다. RAW1~4 배치는 포함되지 않습니다."))
+        # TODO(확인 필요): 장비 간 순번 대응, 지시오차·반복성 식, RAW1~4 배치.
+        return SelectResult(table=table, warnings=warnings, meta={
+            "layout": "radon_detail_v1", "requested_align": "sequence",
+            "row_order": "input_file_then_original_measurement_order",
+            "reference_file_index": reference_index, "averages": table.attrs["averages"],
+            "pending": ["cross_device_alignment", "indication_error", "repeatability", "raw1_4_layout"],
+        })

@@ -10,7 +10,7 @@ def build_average_detail_table(parsed_files: list[ParsedRadonFile]) -> pd.DataFr
     """입력 파일마다 선택된 12행 뒤에 평균 1행을 붙인다. 파일 저장은 하지 않는다.
 
     챔버 모델명/SN처럼 입력에 없는 정보는 빈칸으로 둔다.
-    RAW1~4의 상세 배치는 확인 중이므로 이 표는 별도의 상세 미리보기다.
+    현재 사용자 확인용 CSV에 쓰며, RAW1~4의 상세 배치는 별도 확인이 필요하다.
     """
     if not parsed_files:
         raise ReadError("상세표를 만들 라돈 파일이 없습니다.")
