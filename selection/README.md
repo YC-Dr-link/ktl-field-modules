@@ -91,14 +91,16 @@ B-1에서 해당 로더가 위 패키지의 `get_selector()`를 호출하도록 
 실제 HTTP 업로드 연동을 검증한 것은 아니다. 업로드 엔드포인트 구현은 포함하지 않는다.
 
 `run(paths, options)`는 장비별 열을 가로로 배치한 표를 `SelectResult.table`로 반환한다.
-전체 표는 측정값 12행과 마지막 평균 1행이다. 파일 저장은 서버가 CSV로 변환해 수행한다.
-`options.align`은 현재 `sequence`만 지원한다. `hour`나 알 수 없는 옵션은 오류로 알린다.
+각 파일에서 선택한 12개 값을 배치하고 마지막 행에 평균을 표시한다. 파일 저장은 서버가 수행한다.
+`options.align`은 `hour`(기본값)와 `sequence`를 지원한다. 알 수 없는 옵션은 오류로 알린다.
 `options.reference`는 입력 경로 중 하나이며, 서버가 받은 file ID를 경로로 변환해 전달한다.
 현재 기준기는 `meta.reference_file_index`에 기록하며 지시오차 계산에는 아직 사용하지 않는다.
-입력 파일·측정행 순서를 유지하고, 파일 간 시각 정렬·값 대응은 하지 않는다.
+`hour`는 같은 날짜의 시각에서 분·초를 버려 같은 정시 행에 장비 값을 나란히 배치한다.
+`sequence`는 기존처럼 파일별 선택 순번을 유지하며 개별 측정시간 열을 제공한다.
 
-`meta.layout=radon_wide_v1`과 `DETAIL_LAYOUT` 경고로 결과 형식을 명시한다.
-RAW1~4 배치, 파일 간 대응, 지시오차·반복성은 `meta.pending`에 남긴다.
+`meta.layout`은 `hour`일 때 `radon_hour_v1`, `sequence`일 때 `radon_wide_v1`이다.
+`DETAIL_LAYOUT` 경고와 `meta.alignment`으로 시간 처리 규칙을 명시한다.
+RAW1~4 배치, 지시오차·반복성은 `meta.pending`에 남긴다.
 `ktl_contract.testing.check_selector`는 실제 모듈의 성공 결과로 검증하며 xfail은 제거했다.
 이는 계약 도우미의 타입·호출 검증이며, RAW1~4 배치나 #13 전체 완료를 뜻하지 않는다.
 
@@ -136,8 +138,8 @@ TODO(확인 필요): 장비 간 순번 대응, 지시오차·반복성 계산식
 
 ## 모델·측정시간별 상세표
 
-`build_average_detail_table(parsed_files)`는 파일마다 측정시간과 값 열을 가로로 추가하고,
-측정값 12행 아래 한 행에 모든 파일의 평균을 나란히 표시한다.
+`build_average_detail_table(parsed_files)`는 한 시간 단위 공통 시각과 파일별 값 열을 제공하고,
+마지막 행에 모든 파일의 평균을 나란히 표시한다. 기본값은 `align="hour"`다.
 
 ```python
 from ktl_selectors.radon_table import build_average_detail_table
@@ -146,12 +148,17 @@ table = build_average_detail_table(parsed_files)
 csv_bytes = table.to_csv(index=False, lineterminator="\r\n").encode("utf-8-sig")
 ```
 
-첫 열은 `구분`이며, 파일마다 `[순번] 측정시간`, `[순번] 모델명 · S/N · 항목` 열을 추가한다.
+첫 열은 공통 `측정시간`이며, 파일마다 `[순번] 모델명 · S/N · 항목` 열을 추가한다.
 모델명·S/N은 머리글에만 표시한다. 둘 다 없는 챔버는 파일명을 머리글로 사용한다.
 장비는 `Temp`, 챔버는 `CRM-1 Radon`을 표시한다. 측정시간과 값은 같은 원본 행에서 가져온다.
-같은 행에 놓인 값은 각 파일의 선택 순번이며 동일 시각을 뜻하지 않는다. 시간 맞춤은 하지 않는다.
-평균 행은 `구분=평균`, 각 측정시간은 빈칸이다. 15개 입력은 13행 × 31열이다.
+같은 날짜의 `23:00`, `23:04`, `23:21`은 모두 `23:00:00` 행으로 묶는다. 날짜는 유지한다.
+모든 파일의 선택 시간대 합집합을 오름차순으로 표시하며, 값이 없는 셀은 빈칸이다.
+같은 장비에 같은 시간대 값이 둘 이상이면 `DUPLICATE_HOUR` 오류로 알린다. 임의 집계하지 않는다.
+마지막 `측정시간=평균` 행은 각 파일의 기존 12개 값 평균이다. 빈칸을 0으로 계산하지 않는다.
+파일별 구간이 다르면 측정행 수는 12행보다 많아질 수 있다. 15개 입력은 16열이다.
+`align="sequence"`는 기존 순번 배치(13행, 파일별 시간/값 열)를 유지한다.
 `table.attrs["sources"]`와 `run().meta["sources"]`에 각 열의 파일명·모델·S/N 연결 정보를 제공한다.
+각 source의 `selected_timestamps`에 선택한 원본 측정시각도 보존한다.
 평균 근거와 파싱 경고는 `table.attrs["averages"]`, `table.attrs["warnings"]`에 보존한다.
 CSV 변환은 메모리에서 가능하며 파일 저장과 HTTP 다운로드는 호출하는 서버가 담당한다.
 이 표는 현재 `run()`과 CSV 다운로드에 사용하는 사용자 확인용 상세표다.

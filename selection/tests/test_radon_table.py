@@ -20,7 +20,7 @@ def test_twelve_rows_and_average_with_one_time_value_pair_per_file():
     before = [path.read_bytes() for path in paths]
     parsed = [parse_radon_file(path.name, data) for path, data in zip(paths, before)]
     original = copy.deepcopy(parsed)
-    table = build_average_detail_table(parsed)
+    table = build_average_detail_table(parsed, align="sequence")
     assert table.shape == (13, 5)
     first, second = table.attrs["sources"]
     assert first["value_column"] == "[1] FRD500 · SYNTHETIC-TEMPERATURE · Temp"
@@ -36,7 +36,7 @@ def test_twelve_rows_and_average_with_one_time_value_pair_per_file():
 def test_time_value_pairs_stay_together_without_sorting_or_alignment():
     parsed = parse_radon_path(str(DEVICE))
     parsed.measurements[-2].timestamp -= timedelta(days=2)
-    table = build_average_detail_table([parsed])
+    table = build_average_detail_table([parsed], align="sequence")
     source = table.attrs["sources"][0]
     assert table.iloc[10][source["time_column"]] == "2026-01-01 12:00:00"
     assert table.iloc[10][source["value_column"]] == 30
@@ -50,7 +50,7 @@ def test_duplicate_model_and_file_name_keep_separate_blocks_and_warnings():
     first = parse_radon_file("same.txt", data)
     second = parse_radon_file("same.txt", data.replace(b"SYNTHETIC-TEMPERATURE", b"SYNTHETIC-SECOND")
                               .replace(b"\t20\t", b"\t32\t").replace(b"Data No: 14", b"Data No: 15"))
-    table = build_average_detail_table([first, second])
+    table = build_average_detail_table([first, second], align="sequence")
     one, two = table.attrs["sources"]
     assert table.columns.is_unique and table.shape == (13, 5)
     assert table.iloc[12][one["value_column"]] == 25.5
@@ -62,7 +62,7 @@ def test_duplicate_model_and_file_name_keep_separate_blocks_and_warnings():
 
 def test_csv_roundtrip_has_time_values_and_mean_below_each_file():
     parsed = parse_radon_file('synthetic,"quoted".txt', DEVICE.read_bytes())
-    table = build_average_detail_table([parsed])
+    table = build_average_detail_table([parsed], align="sequence")
     content = table.to_csv(index=False, lineterminator="\r\n").encode("utf-8-sig")
     assert content.startswith(b"\xef\xbb\xbf")
     rows = list(csv.DictReader(io.StringIO(content.decode("utf-8-sig"))))
@@ -88,7 +88,7 @@ def test_supplied_files_have_one_average_below_twelve_rows_each():
     if not paths:
         pytest.skip("로컬 합성 예제는 커밋 대상에서 제외됨")
     parsed = [parse_radon_path(str(path)) for path in paths]
-    table = build_average_detail_table(parsed)
+    table = build_average_detail_table(parsed, align="sequence")
     assert table.shape == (13, 1 + 2 * len(paths))
     for source, info in zip(parsed, table.attrs["sources"]):
         assert info["source_file"] == source.source_file
@@ -101,7 +101,7 @@ def test_identical_devices_keep_unique_headers_and_independent_timestamps():
     second = copy.deepcopy(first)
     for row in second.measurements:
         row.timestamp += timedelta(minutes=2)
-    table = build_average_detail_table([first, second])
+    table = build_average_detail_table([first, second], align="sequence")
     one, two = table.attrs["sources"]
     assert table.columns.is_unique
     assert table.iloc[0][one["time_column"]] == "2026-01-03 02:00:00"

@@ -1,4 +1,5 @@
 import csv
+from datetime import datetime
 import hashlib
 import io
 import json
@@ -39,7 +40,7 @@ def test_real_run_contract_metadata_csv_and_input_preservation():
 
 
 @pytest.mark.parametrize("options,message", [
-    (None, "dict"), ({"align": "hour"}, "순번"), ({"align": None}, "순번"),
+    (None, "dict"), ({"align": "nearest"}, "정렬"), ({"align": None}, "정렬"),
     ({"unexpected": True}, "옵션"), ({"reference": 1}, "문자열"),
     ({"reference": "not-uploaded.txt"}, "선택한 파일"),
 ])
@@ -68,6 +69,7 @@ def test_default_options_and_parsing_warnings_survive(tmp_path):
     path.write_bytes(data)
     result = get_selector("radon_merge").run([str(path)], {})
     assert result.meta["reference_file_index"] is None
+    assert result.meta["requested_align"] == "hour" and result.meta["layout"] == "radon_hour_v1"
     assert result.meta["averages"][0]["average"] == 25.5
     assert [warning.code for warning in result.warnings] == ["COUNT_MISMATCH", "DETAIL_LAYOUT"]
 
@@ -77,6 +79,8 @@ def test_fifteen_files_return_side_by_side_columns_when_examples_available():
     if not paths:
         pytest.skip("로컬 합성 예제는 커밋 대상에서 제외됨")
     result = get_selector("radon_merge").run(paths, {})
-    assert result.table.shape == (13, 1 + 2 * len(paths))
+    hours = {datetime.fromisoformat(t).replace(minute=0, second=0, microsecond=0)
+             for source in result.meta["sources"] for t in source["selected_timestamps"]}
+    assert result.table.shape == (len(hours) + 1, 1 + len(paths))
     assert len(result.meta["averages"]) == len(paths)
-    assert (result.table["구분"] == "평균").sum() == 1
+    assert (result.table["측정시간"] == "평균").sum() == 1

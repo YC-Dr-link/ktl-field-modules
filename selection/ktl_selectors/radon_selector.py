@@ -75,8 +75,9 @@ class RadonSelector:
             raise ReadError("병합 options는 dict여야 합니다.")
         if set(options) - {"reference", "align"}:
             raise ReadError("지원하지 않는 병합 옵션이 있습니다.")
-        if options.get("align", "sequence") != "sequence":
-            raise ReadError("현재 순번 방식만 지원합니다. 시각 정렬은 별도 구현이 필요합니다.")
+        align = options.get("align", "hour")
+        if align not in ("hour", "sequence"):
+            raise ReadError("정렬 방식은 hour 또는 sequence여야 합니다.")
         reference_index = None
         reference = options.get("reference")
         if reference is not None:
@@ -87,13 +88,19 @@ class RadonSelector:
                 raise ReadError("기준기는 선택한 파일 경로 중 하나여야 합니다.")
             reference_index = normalized.index(Path(reference).resolve()) + 1
         parsed = [parse_radon_path(path) for path in paths]
-        table = build_average_detail_table(parsed)
+        table = build_average_detail_table(parsed, align=align)
         warnings = [warning for source in parsed for warning in source.warnings]
-        warnings.append(Warning("DETAIL_LAYOUT", "장비별 열에 측정값 12행과 평균 1행을 표시합니다. 같은 행은 파일별 선택 순번이며 시각 정렬이나 RAW1~4 배치는 포함되지 않습니다."))
+        description = ("같은 날짜의 측정시각을 한 시간 단위 정시로 묶습니다. 빈 시간대는 빈칸입니다."
+                       if align == "hour" else "같은 행은 파일별 선택 순번이며 시각 정렬은 수행하지 않습니다.")
+        warnings.append(Warning("DETAIL_LAYOUT", f"{description} 장비별 기존 12개 값의 평균을 마지막 행에 표시합니다. RAW1~4 배치는 포함되지 않습니다."))
         # TODO(확인 필요): 장비 간 순번 대응, 지시오차·반복성 식, RAW1~4 배치.
         return SelectResult(table=table, warnings=warnings, meta={
-            "layout": "radon_wide_v1", "requested_align": "sequence",
-            "row_order": "selected_row_position_per_file", "sources": table.attrs["sources"],
+            "layout": "radon_hour_v1" if align == "hour" else "radon_wide_v1", "requested_align": align,
+            "row_order": "hour_ascending" if align == "hour" else "selected_row_position_per_file",
+            "sources": table.attrs["sources"],
+            "alignment": {"mode": align, "rounding": "floor_to_hour" if align == "hour" else None,
+                          "missing": "blank", "duplicate_hour": "error"},
             "reference_file_index": reference_index, "averages": table.attrs["averages"],
-            "pending": ["cross_device_alignment", "indication_error", "repeatability", "raw1_4_layout"],
+            "pending": (["cross_device_alignment"] if align == "sequence" else [])
+                       + ["indication_error", "repeatability", "raw1_4_layout"],
         })
