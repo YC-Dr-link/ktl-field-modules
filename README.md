@@ -16,9 +16,11 @@
 
 ```
 python -m venv .venv && . .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install -e contract -e readers -e selection pytest
+pip install -e contract -e "readers[screen]" -e selection pytest
 pytest
 ```
+
+먼지 Reader의 합성 정답셋 정확도는 `python -m ktl_readers.accuracy`로 측정한다.
 
 ## 규칙
 
