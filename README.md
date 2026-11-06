@@ -16,9 +16,11 @@
 
 ```
 python -m venv .venv && . .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install -e contract -e readers -e selection pytest
+pip install -e contract -e "readers[screen]" -e selection pytest
 pytest
 ```
+
+합성 이미지로 cert · flowmeter 필드 일치율과 고신뢰도 오답 비율을 측정하려면 `python -m ktl_readers.accuracy`를 실행한다.
 
 ## 규칙
 
