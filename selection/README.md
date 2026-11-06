@@ -90,11 +90,126 @@ B-1에서 해당 로더가 위 패키지의 `get_selector()`를 호출하도록 
 이 저장소의 테스트는 패키지 로더 → 실제 Selector → 파서를 검증하며,
 실제 HTTP 업로드 연동을 검증한 것은 아니다. 업로드 엔드포인트 구현은 포함하지 않는다.
 
-`run()`의 RAW 배치·병합은 별도 이슈 #13 범위다. 현재 호출하면 `ReadError`의 하위 타입인
-`RadonMergePendingError`를 발생시킨다. 가짜 결과를 성공으로 반환하지 않는다.
-따라서 `run()` 성공까지 요구하는 전체 계약 테스트는 아직 완료되지 않았다.
-해당 테스트는 이 예외에만 strict xfail을 적용하며, 다른 실패는 그대로 실패 처리한다.
-`detect()`와 `series()`는 별도의 정상·오류·원본 불변 테스트로 검증한다.
+`run(paths, options)`는 장비별 열을 가로로 배치한 표를 `SelectResult.table`로 반환한다.
+각 파일에서 선택한 12개 값을 배치하고 마지막 두 행에 평균과 표준편차를 표시한다. 파일 저장은 서버가 수행한다.
+`options.align`은 `hour`(기본값)와 `sequence`를 지원한다. 알 수 없는 옵션은 오류로 알린다.
+`options.stddev_ddof`는 표본 표준편차 `1`(기본값), 모집단 표준편차 `0`을 지원한다.
+표준편차는 각 파일의 평균에 사용한 동일한 12개 값으로 계산하며 평균 바로 아래 행에 표시한다.
+`meta.standard_deviation`에 계산 방식과 건수를 제공하고, 각 평균 근거의 `standard_deviations`에 두 방식의 값을 보존한다.
+TODO(확인 필요): 기본 표본 표준편차 방식이 최종 업무 기준과 일치하는지 확인한다. 지시오차·반복성의 최종 식은 별도다.
+`options.reference`는 입력 경로 중 하나이며, 서버가 받은 file ID를 경로로 변환해 전달한다.
+현재 기준기는 `meta.reference_file_index`에 기록하며 지시오차 계산에는 아직 사용하지 않는다.
+사용자가 지정한 파일명 규칙에 따라 KTL로 시작하는 파일, HJ로 시작하는 파일,
+1023 파일의 챔버 CRM-1 Radon 순서로 기준장비를 앞에 배치한다(접두어 대소문자 무시).
+그 뒤에 `options.reference`로 추가 지정한 기준기와 나머지 파일을 입력 순서대로 배치한다.
+파일명은 기준 역할 판별에만 쓰며 S/N은 파일 내용에서만 읽는다.
+`hour`는 같은 날짜의 시각에서 분·초를 버려 같은 정시 행에 장비 값을 나란히 배치한다.
+`sequence`는 기존처럼 파일별 선택 순번을 유지하며 개별 측정시간 열을 제공한다.
+
+`meta.layout`은 `hour`일 때 `radon_hour_v1`, `sequence`일 때 `radon_wide_v1`이다.
+`DETAIL_LAYOUT` 경고와 `meta.alignment`으로 시간 처리 규칙을 명시한다.
+RAW1~4 배치, 지시오차·반복성은 `meta.pending`에 남긴다.
+`ktl_contract.testing.check_selector`는 실제 모듈의 성공 결과로 검증하며 xfail은 제거했다.
+이는 계약 도우미의 타입·호출 검증이며, RAW1~4 배치나 #13 전체 완료를 뜻하지 않는다.
+
+## 파일별 12개 값 평균 (#13, 사용자 확인 규칙)
+
+업로드 파일을 모두 파싱한 뒤, 각 파일의 아래 열과 구간을 사용해 파일별로 평균을 낸다.
+여러 파일의 값을 합쳐 평균 내지 않으며, 파일의 행 순서를 유지한다.
+
+| 파일 형식 | 사용할 열 | 선택 구간 |
+|---|---|---|
+| 챔버 CSV (`1023.csv` 예제) | `CRM-1 Radon` | 첫 `Zero Air Purge` 이전에서 `Start`, `Source Purge`를 제외한 마지막 12개 측정행 |
+| 장비 TXT/CSV | `Temp` | 파일 마지막 12개 측정행 |
+
+챔버의 `Start`, `Source Purge`, `Zero Air Purge` 행은 평균에 포함하지 않는다.
+대상 행이 12개 미만이거나 선택된 값이 비어 있으면 오류로 알리고 다른 행으로 채우지 않는다.
+
+```python
+from ktl_selectors.radon import parse_radon_file
+from ktl_selectors.radon_average import average_radon_files
+
+parsed_files = [parse_radon_file(filename, content) for filename, content in uploads]
+result = average_radon_files(parsed_files)
+```
+
+`averages`에는 파일별 S/N·모델·선택 열(`source_column`)·평균·선택한 12개 값·측정행 순번·
+원본 행 번호·시간 구간·선택 방식(`selection`)을 제공한다.
+`measurement_rows`는 1부터 시작하는 원본 측정행 순번이며 상태 제외로 불연속일 수 있다.
+`source_index`는 입력 파일의 1부터 시작하는 순번이다.
+`warnings`에는 파싱 경고를 반환한다. 파일명이나 S/N이 같아도 각 입력을 따로 유지한다.
+원본 파일과 파싱 객체는 수정하지 않는다. 반올림하지 않은 JSON 가능한 dict를 반환한다.
+파서가 제공하는 라돈 `unit`을 온도 단위로 사용하지 않는다.
+
+TODO(확인 필요): 장비 간 순번 대응, 지시오차·반복성 계산식, RAW1~4 전체 배치.
+`run()`은 이 평균 근거를 사용해 현재 확인용 상세표를 반환한다.
+
+## 모델·측정시간별 상세표
+
+`build_average_detail_table(parsed_files)`는 한 시간 단위 공통 시각과 파일별 값 열을 제공하고,
+마지막 두 행에 모든 파일의 평균과 표준편차를 나란히 표시한다. 기본값은 `align="hour"`다.
+
+```python
+from ktl_selectors.radon_table import build_average_detail_table
+import csv
+import io
+
+table = build_average_detail_table(parsed_files)
+stream = io.StringIO(newline="")
+writer = csv.writer(stream, lineterminator="\r\n")
+writer.writerows(table.attrs["csv_header_rows"])
+writer.writerow(table.columns)
+writer.writerows(table.values.tolist())
+csv_bytes = stream.getvalue().encode("utf-8-sig")
+```
+
+CSV의 상단은 `파일명` 행 → `S/N` 행 → 측정시간/장비 번호 머리글 순서다.
+데이터 표의 첫 열은 공통 `측정시간`이며 장비 열은 `[출력순번]`으로 표시한다.
+챔버 열은 `[출력순번] CRM-1 Radon`이고, S/N 행의 해당 칸은 빈칸으로 둔다.
+`table.attrs["csv_header_rows"]`와 `run().meta["csv_header_rows"]`가 두 상단 행을 제공한다.
+CSV를 만들 때 두 행을 먼저 기록한 뒤 칼럼 이름과 측정행을 기록한다. `to_csv()`만 호출하면 상단 두 행은 포함되지 않는다.
+장비는 `Temp`, 챔버는 `CRM-1 Radon`을 표시한다. 측정시간과 값은 같은 원본 행에서 가져온다.
+같은 날짜의 `23:00`, `23:04`, `23:21`은 모두 `23:00:00` 행으로 묶는다. 날짜는 유지한다.
+모든 파일의 선택 시간대 합집합을 오름차순으로 표시하며, 값이 없는 셀은 빈칸이다.
+같은 장비에 같은 시간대 값이 둘 이상이면 `DUPLICATE_HOUR` 오류로 알린다. 임의 집계하지 않는다.
+마지막 두 행은 `측정시간=평균`, `측정시간=표준편차`다. 각 파일의 기존 12개 값을 사용하며 빈칸을 0으로 계산하지 않는다.
+파일별 구간이 다르면 측정행 수는 12행보다 많아질 수 있다. 15개 입력은 16열이다.
+`align="sequence"`는 순번 배치(측정값 12행과 통계 2행, 파일별 시간/값 열)를 사용한다.
+`table.attrs["sources"]`와 `run().meta["sources"]`에 각 열의 파일명·모델·S/N 연결 정보를 제공한다.
+각 source의 `selected_timestamps`에 선택한 원본 측정시각도 보존한다.
+`source_file`(출처 파일명)과 `serial_number`(내부 S/N)는 별도 필드다. S/N에 파일명을 대입하지 않는다.
+`source_index`는 원래 입력 순번, `display_index`는 출력 순번, `is_reference`는 기준장비 여부다.
+평균 근거는 실제 열 순서와 같으며 각 항목의 `source_index`로 원본 입력을 추적할 수 있다.
+평균 근거와 파싱 경고는 `table.attrs["averages"]`, `table.attrs["warnings"]`에 보존한다.
+CSV 변환은 메모리에서 가능하며 파일 저장과 HTTP 다운로드는 호출하는 서버가 담당한다.
+이 표는 현재 `run()`과 CSV 다운로드에 사용하는 사용자 확인용 상세표다.
+RAW1~4의 전체 배치는 별도 확인이 필요하다.
+
+## 개별 챔버 평균 함수
+
+챔버만 처리할 때 아래 함수를 직접 호출할 수 있다.
+첫 `Zero Air Purge` 이전에서 `Start`, `Source Purge`를 제외한 마지막 12행으로 산술평균을 낸다.
+상태 비교 시 앞뒤 공백·중복 공백·대소문자 차이를 허용하며 원본 상태는 보존한다.
+
+```python
+from ktl_selectors.radon import parse_radon_file
+from ktl_selectors.radon_average import average_before_zero_air_purge
+
+parsed = parse_radon_file(filename="upload.csv", content=file_bytes)
+result = average_before_zero_air_purge(parsed, column="crm1_radon")
+```
+
+`column`은 `target_radon`, `calculate_radon`, `crm1_radon` 중 하나다.
+결과는 JSON 가능한 dict이며 `average`, `count`, `measurement_rows`(1부터 시작하는 측정행 순번),
+`source_lines`(원본 파일 행 번호), 구간 시각과 Purge 위치를 제공한다. 반올림은 하지 않는다.
+선택된 12행에 빈 값이 있으면 다른 행으로 대체하거나 분모를 줄이지 않고 오류를 낸다.
+Purge 누락·12행 미달도 오류이며, 연속된 Purge 행은 첫 행을 경계로 사용한다.
+서로 떨어진 Purge 구간이 여러 개면 대상 구간을 추측하지 않고 오류로 알린다.
+장비 TXT에는 이 상태 열이 없으므로 이 함수는 챔버 파싱 결과만 받는다.
+원본과 파싱 객체는 수정하지 않으며, 파싱 경고는 원래 객체의 `warnings`에 유지한다.
+
+TODO(확인 필요): 시험품에 적용할 챔버 행과의 대응, 지시오차·반복성 식, RAW1~4 전체 배치.
+`run()`이 이 함수를 호출해 상세표의 챔버 평균과 계산 근거를 반환한다.
 
 ## 테스트
 

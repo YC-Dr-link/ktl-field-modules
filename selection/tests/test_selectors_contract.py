@@ -4,7 +4,6 @@ import pytest
 from ktl_contract.testing import check_selector
 from ktl_contract.fakes import FakeSelector
 from ktl_selectors import REGISTRY, get_selector
-from ktl_selectors.radon_selector import RadonMergePendingError
 
 SYN = Path(__file__).resolve().parents[1] / "synthetic"
 
@@ -16,15 +15,9 @@ def test_fake_selector_follows_contract(tmp_path):
         check_selector(FakeSelector(name), [str(f)], {})
 
 
-@pytest.mark.parametrize("name", [
-    pytest.param(name, marks=pytest.mark.xfail(
-        raises=RadonMergePendingError, strict=True,
-        reason="#13: run()의 RAW 병합 미구현. detect/series 검증은 test_radon_selector.py에서 수행.",
-    )) if name == "radon_merge" else name
-    for name in sorted(REGISTRY)
-])
+@pytest.mark.parametrize("name", sorted(REGISTRY))
 def test_registered_selector_contract(name):
-    folder = "radon_parser" if name == "radon_merge" else name
+    folder = "radon_average" if name == "radon_merge" else name
     files = sorted(str(p) for p in (SYN / folder).glob("*") if p.is_file() and p.suffix in {".csv", ".txt"})
     if not files:
         pytest.skip(f"synthetic/{name}/ 에 합성 파일이 아직 없음")
