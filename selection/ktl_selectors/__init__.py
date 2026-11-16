@@ -4,10 +4,11 @@
 """
 from ktl_contract import Selector
 from ktl_contract.fakes import FakeSelector
+from .radon_selector import RadonSelector
 
 REGISTRY: dict[str, type | object] = {
-    # "gas_select": GasSelector,     # 탁
-    # "radon_merge": RadonMerger,    # 다운
+    # "gas_select": GasSelector,     # 다운
+    "radon_merge": RadonSelector,   # 탁 (#11 판별·시계열, #13 병합)
 }
 
 

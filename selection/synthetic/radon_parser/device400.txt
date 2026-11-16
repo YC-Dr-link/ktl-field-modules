@@ -1,0 +1,10 @@
+FTLAB RADON DATA FILE
+MODEL NAME: FRD400 V2.0
+S/N: SYNTHETIC-400
+Date and Time(Start): 2026.01.02 12:00:00
+Date and Time(Last): 2026.01.02 13:00:00
+Unit: Bq/m3
+Duration(min): 60
+Data No : 2
+2 2026.01.02 13:00:00 46 27.0 31 1023
+1    2026.01.02 12:00:00    -99    26.0    39    1022

@@ -1,0 +1,2 @@
+# FRD2400의 실제 구조를 재현한 합성 파일: 행 끝 탭은 의도한 구분자.
+device2400.txt whitespace=-blank-at-eol

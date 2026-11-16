@@ -1,0 +1,6 @@
+Project Name : ,SYNTHETIC PARSER TEST,,,,
+Date,Sequence Status,Target Radon,Calculate Radon,CRM-1 Radon,Extra
+2026-10-22 10:55:00,Start,0,0.000,0,synthetic-a
+2026-10-22 11:00:00,Source Purge,0,0,0,synthetic-b
+2026-10-22 12:00:00,1st Target Radon,200,200.100,50,synthetic-c
+2026-10-23 08:00:00,Zero Air Purge,0,0,90,synthetic-d
