@@ -68,6 +68,53 @@ def test_format_check_lowers_confidence():
     assert cert._check("serial", "A1", 0.9) <= 0.5
 
 
+def test_format_check_on_synthetic_cert_numbers():
+    assert cert._check("prev_receipt", "SYN-PREV-0001", 0.95) == 0.95
+    assert cert._check("approval_no", "SYN-APP-0007", 0.95) == 0.95
+    assert cert._check("serial", "SYN-SN-0001", 0.95) == 0.95
+    assert cert._check("maker", "SYN MAKER 02", 0.95) == 0.95
+    for key, misread in [("prev_receipt", "SYN-PREV-00O1"), ("approval_no", "SYN-APP-007"),
+                         ("serial", "SYN-SN-0001|"), ("maker", "|"), ("maker", "02 MAKER")]:
+        assert cert._check(key, misread, 0.99) <= 0.5, misread     # OCR가 흔히 틀리는 꼴은 0.5 이하
+
+
+def _ocr(text, box, score=0.95):
+    from ktl_readers.ocr import OCRText
+    return OCRText(text=text, score=score, bbox=box)
+
+
+def test_read_by_labels_pairs_label_with_value_below_or_right():
+    texts = [
+        _ocr("PREV. RECEIPT", (80, 150, 200, 165)), _ocr("SYN-PREV-0003", (80, 175, 260, 195)),       # 아래 줄
+        _ocr("MAKER", (80, 320, 140, 335)), _ocr("SYN MAKER 04", (80, 345, 240, 365)),                # 값에 'MAKER'가 섞임
+        _ocr("SERIAL", (80, 400, 150, 415)), _ocr("SYN-SN-00O3", (170, 400, 330, 416), 0.97),         # 같은 줄 오른쪽, 오독
+        _ocr("All identifiers are generated test data.", (60, 500, 600, 515)),
+    ]
+    values = {v.key: v for v in cert.read_by_labels(texts)}
+    assert set(values) == {"prev_receipt", "maker", "serial"}           # 라벨이 없는 칸은 안 낸다
+    assert values["prev_receipt"].value == "SYN-PREV-0003" and values["prev_receipt"].confidence == 0.95
+    assert values["maker"].value == "SYN MAKER 04" and values["maker"].label == "제조사"
+    assert values["serial"].value == "SYN-SN-00O3" and values["serial"].confidence <= 0.5
+    assert values["serial"].bbox == [170, 400, 330, 416]
+
+
+def test_reader_falls_back_to_labels_when_no_record_table(monkeypatch, tmp_path):
+    page = np.full((600, 800, 3), 255, np.uint8)                       # 표 선이 없는 사진
+    path = tmp_path / "card.png"
+    cv2.imwrite(str(path), page)
+
+    class FakePageOCR:
+        def read_texts(self, image_path):
+            return [_ocr("APPROVAL NO.", (80, 230, 200, 245)), _ocr("SYN-APP-0O07", (80, 255, 250, 275))], (800, 600)
+
+    reader = cert.CertReader()
+    reader._page_ocr = FakePageOCR()
+    result = check_reader(reader, str(path), "cert")
+    assert [(v.key, v.value) for v in result.values] == [("approval_no", "SYN-APP-0O07")]
+    assert result.values[0].confidence <= 0.5
+    assert [w.code for w in result.warnings] == ["FORMAT_CHECK_FAILED"]
+
+
 class FakeEngine:
     """OCR 대신 정해진 글자를 돌려준다 (OCR 없이 Reader 흐름만 확인)."""
 

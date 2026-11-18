@@ -50,7 +50,31 @@ def test_registered_reader_contract(name, tmp_path):
         pytest.skip(f"synthetic/{name}/ 에 합성 이미지가 아직 없음")
     reader = get_reader(name, fake_fallback=False)
     for p in samples[:5]:
-        check_reader(reader, str(p), name)
+        result = check_reader(reader, str(p), name)
+        if name == "flowmeter" and result is not None:
+            assert all(value.unit == "L/min" for value in result.values)
     bad = tmp_path / "empty.jpg"
     bad.write_bytes(b"")
     check_reader_rejects(reader, str(bad), name)
+
+
+def test_synthetic_accuracy_thresholds():
+    from ktl_readers.accuracy import (
+        MAX_HIGH_CONFIDENCE_ERROR_RATE,
+        MIN_FIELD_ACCURACY,
+        evaluate,
+    )
+
+    for name in ("cert", "flowmeter"):
+        metrics = evaluate(name)
+        assert metrics.accuracy >= MIN_FIELD_ACCURACY
+        assert metrics.high_confidence_error_rate <= MAX_HIGH_CONFIDENCE_ERROR_RATE
+
+
+@pytest.mark.parametrize("value", ["not-a-number", "nan", "inf", "-0.1"])
+def test_invalid_flow_values_get_low_confidence(value):
+    from ktl_readers.flowmeter import _is_valid_flow
+    from ktl_readers.ocr import confidence_for
+
+    assert not _is_valid_flow(value)
+    assert confidence_for(0.99, _is_valid_flow(value)) <= 0.5
