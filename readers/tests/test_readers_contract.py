@@ -59,6 +59,8 @@ def test_registered_reader_contract(name, tmp_path):
 
 
 def test_synthetic_accuracy_thresholds():
+    pytest.importorskip("cv2")           # OCR 설치(readers[screen])가 있을 때만. 60장이라 1~2분 걸린다
+    pytest.importorskip("rapidocr")
     from ktl_readers.accuracy import (
         MAX_HIGH_CONFIDENCE_ERROR_RATE,
         MIN_FIELD_ACCURACY,

@@ -1,6 +1,7 @@
 """cert Reader: 정도검사 기록부 사진 → 위쪽 표 → 값 칸 3개 → 칸마다 OCR.
+위쪽 표(7줄)를 못 찾으면 필증 방식(사진 전체 OCR → 칸 이름 옆·아래 값, read_by_labels)으로 읽는다 (#5).
 
-흐름
+흐름 (기록부)
 1) load_image → extract_top_table (preprocess.py, 서류 회전·위쪽 표 자르기)
 2) 표 선으로 7칸을 나누고, 칸 이름|값 경계 오른쪽만 쓴다
 3) 필요한 3칸만 읽는다 (양식이 고정이라 몇 번째 줄인지로 값을 정한다)
@@ -20,8 +21,9 @@ import re
 import cv2
 import numpy as np
 
-from ktl_contract import ReadError, ReadResult, Value
+from ktl_contract import ReadError, ReadResult, Value, Warning
 
+from .ocr import OCRReader
 from .preprocess import extract_top_table, load_image
 
 ENGINE = os.environ.get("KTL_CERT_OCR", "rapid")     # "rapid" | "paddle_vl"
@@ -163,9 +165,7 @@ def _engine_rapid():
 
 def _check(key, text, confidence):
     """형식 검사. 안 맞으면 신뢰도 0.5 이하 (틀린 값을 높은 신뢰도로 내지 않기)."""
-    ok = {"approval_no": re.fullmatch(rf"제{APPROVAL.pattern}호", text),
-          "serial": SERIAL.fullmatch(text),
-          "maker": len(text) >= 2}[key]
+    ok = len(text) >= 2 and FORMATS[key].fullmatch(text)
     return confidence if ok else min(confidence, 0.5)
 
 
@@ -178,24 +178,114 @@ def _to_photo_box(box, matrix):
     return [int(a), int(b), int(c), int(d)]
 
 
+# ---------- 필증 방식: 사진 전체 OCR → 칸 이름(라벨) 오른쪽·바로 아래 글자를 값으로 (#5) ----------
+# 위쪽 표(기록부)를 못 찾으면 이 방식으로 읽는다. 합성 정답셋(synthetic/cert)이 이 양식이다.
+# TODO(확인 필요): 실제 필증의 칸 이름·배치는 아직 대조 전 (#18). 라벨 별칭은 합성(영문) + 문서의 화면 이름(한글)
+LABELS = {                                            # key: (화면 이름, 라벨 별칭 — 소문자·영숫자·한글만)
+    "prev_receipt": ("직전접수번호", ("prevreceipt", "previousreceipt", "직전접수번호")),
+    "approval_no": ("형식승인번호", ("approvalno", "approvalnumber", "형식승인번호")),
+    "maker": ("제조사", ("maker", "manufacturer", "제조사")),
+    "serial": ("제조번호", ("serialno", "serial", "제조번호")),
+}
+SYN_ID = r"[A-Z]+(?:-[A-Z]+)+-\d{4}"                  # 합성 정답셋 번호 꼴 (SYN-APP-0007). TODO(확인 필요): 실제 필증 번호 꼴
+FORMATS = {                                           # 형식 검사 (안 맞으면 신뢰도 0.5 이하)
+    "prev_receipt": re.compile(SYN_ID),
+    "approval_no": re.compile(rf"제{APPROVAL.pattern}호|{SYN_ID}"),
+    "serial": re.compile(rf"{SERIAL.pattern}|{SYN_ID}"),
+    "maker": re.compile(r"\(주\).+|[A-Za-z가-힣][A-Za-z가-힣 .&]*(?: \d{1,3})?"),   # 글자로 시작, 숫자는 끝에만
+}
+
+
+def _norm(text):
+    return re.sub(r"[^a-z0-9가-힣]", "", text.lower())
+
+
+def _label_key(text):
+    """글자 덩어리가 칸 이름이면 그 key. 값 안에 별칭이 섞인 경우('SYN MAKER 02')는 길이로 거른다."""
+    n = _norm(text)
+    for key, (_, aliases) in LABELS.items():
+        if any(a in n and len(n) <= len(a) + 3 for a in aliases):
+            return key
+    return None
+
+
+def _value_near(label, texts):
+    """라벨 오른쪽 같은 줄 또는 바로 아래 줄에서 가장 가까운 글자 덩어리."""
+    x1, y1, x2, y2 = label.bbox
+    h, cx, cy = max(1, y2 - y1), (x1 + x2) / 2, (y1 + y2) / 2
+    best = None
+    for t in texts:
+        if _label_key(t.text) or not t.text:
+            continue
+        tx1, ty1, tx2, ty2 = t.bbox
+        tcx, tcy = (tx1 + tx2) / 2, (ty1 + ty2) / 2
+        right = tx1 >= x2 - h and abs(tcy - cy) <= h * 0.8
+        below = 0 < tcy - cy <= h * 3.5 and tx1 <= x2 and tx2 >= x1 - h       # 아래 줄, 라벨과 가로로 겹침
+        if right or below:
+            d = abs(tcy - cy) + 0.2 * abs(tcx - cx)
+            if best is None or d < best[0]:
+                best = (d, t)
+    return best[1] if best else None
+
+
+def read_by_labels(texts):
+    """OCR 글자 덩어리들 → Value 목록. 라벨마다 값 하나, 같은 값 덩어리를 두 칸에 쓰지 않는다."""
+    labels = {}
+    for t in texts:
+        key = _label_key(t.text)
+        if key and (key not in labels or t.score > labels[key].score):
+            labels[key] = t
+    values, used = [], set()
+    for key, label in labels.items():
+        found = _value_near(label, texts)
+        if found is None or found.bbox in used:
+            continue
+        used.add(found.bbox)
+        text = re.sub(r"\s+", " ", found.text).strip()
+        values.append(Value(key=key, label=LABELS[key][0], value=text,
+                            confidence=round(_check(key, text, min(label.score, found.score)), 2), bbox=list(found.bbox)))
+    return values
+
+
 class CertReader:
     name = "cert"
 
-    def read(self, image_path: str, item: str) -> ReadResult:
-        image = load_image(image_path)
+    def __init__(self):
+        self._page_ocr = None
+
+    def _read_table(self, image):
+        """기록부 방식 (#3). 표를 못 찾으면 ReadError."""
         table, matrix = extract_top_table(image)
         cells = split_value_cells(table)
+        if len(cells) <= max(row for row, _ in FIELDS.values()):   # 줄 수가 모자라면 기록부 표가 아님 (필증 테두리 등)
+            raise ReadError("기록부 위쪽 표 양식이 아님")
         engine = _engine()
         values = []
         for key, (row, label) in FIELDS.items():
-            if row >= len(cells):
-                continue
             cell, box = cells[row]
             text, confidence = engine.read(key, cell)
             if not text:
                 continue
             values.append(Value(key=key, label=label, value=text,
                                 confidence=round(_check(key, text, confidence), 2), bbox=_to_photo_box(box, matrix)))
+        return values
+
+    def _read_labels(self, image_path):
+        if self._page_ocr is None:
+            self._page_ocr = OCRReader()
+        texts, _ = self._page_ocr.read_texts(image_path)
+        return read_by_labels(texts)
+
+    def read(self, image_path: str, item: str) -> ReadResult:
+        image = load_image(image_path)
+        try:
+            values = self._read_table(image)
+        except ReadError:
+            values = []
         if not values:
-            raise ReadError("기록부에서 값을 읽지 못함")
-        return ReadResult(values=values)
+            values = self._read_labels(image_path)
+        if not values:
+            raise ReadError("필증·기록부에서 값을 읽지 못함")
+        warnings = [Warning("FORMAT_CHECK_FAILED", f"{v.label} 형식이 예상과 달라 확인이 필요함")
+                    for v in values if v.confidence <= 0.5]
+        return ReadResult(values=values, warnings=warnings)
